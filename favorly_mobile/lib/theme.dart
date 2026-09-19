@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 class AppColors {
   const AppColors._();
 
-  static const cream = Color(0xFFFCFAF6);
+  static const cream = Color(0xFFFAF7F0);
   static const surface = Color(0xFFFFFFFF);
-  static const green = Color(0xFF1C4B3C);
+  static const green = Color(0xFF214E3B);
   static const greenTint = Color(0xFFE7EFE8);
   static const greenTintDeep = Color(0xFFD2E1D4);
-  static const orange = Color(0xFFE79463);
+  static const orange = Color(0xFFF2A56B);
   static const peach = Color(0xFFF9E1CD);
   static const ink = Color(0xFF15211C);
   static const muted = Color(0xFF6C7A73);
