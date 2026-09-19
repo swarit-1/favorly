@@ -335,3 +335,12 @@ Always: persist raw model text + provider + latency in parses.raw_ref metadata f
 2. Tax share: proportional (PRD) vs. only on taxable lines — v0 goes proportional; confirm.
 3. Substitution timeout N: proposing 3 minutes for the demo, configurable per trip.
 4. Voice for "Post Trip" (PRD §8 beat 1): parse `store` + `depart_at` with the same text parser via a tiny `TripDraft` model (`store: str; depart_at: datetime; confidence`) — adding it to §3.3 unless you object.
+
+---
+
+## Lane specs
+
+- [A — Contracts + Backend](specs/A-contracts-backend.md)
+- [B — AI / Vision](specs/B-ai-vision.md)
+- [C — Frontend PWA](specs/C-frontend.md)
+- [D — Demo + Data](specs/D-demo-data.md)
