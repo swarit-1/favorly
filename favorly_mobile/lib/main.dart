@@ -46,9 +46,7 @@ class _RootShellState extends State<RootShell> {
       ),
       body: IndexedStack(
         index: _index,
-        children: [
-          for (final tab in _tabs) _Placeholder(label: tab.label),
-        ],
+        children: [for (final tab in _tabs) _Placeholder(label: tab.label)],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
