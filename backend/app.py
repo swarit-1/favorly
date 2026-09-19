@@ -1,21 +1,31 @@
 """Favorly FastAPI application."""
 
 import os
-import json
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, Depends, HTTPException
+from dotenv import load_dotenv
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.openapi.utils import get_openapi
+from supabase import create_client, Client
 
-# Internal imports
-from db.mongo_client import get_mongo_client, close_mongo_client, init_collections, get_db
-from auth.firebase_auth import init_firebase, get_current_user
-from realtime.websocket_manager import manager
 from shared.contracts import models
 
-# Import routes (will be created next)
-# from routes import trips, requests as request_routes, parses, merged_list, substitutions, receipts, handoff, ledger
+# Load environment variables from .env
+load_dotenv()
+
+
+# ============================================================================
+# SUPABASE CLIENT
+# ============================================================================
+
+def get_supabase_client() -> Client:
+    """Get Supabase client."""
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    if not url or not key:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
+    return create_client(url, key)
 
 
 # ============================================================================
@@ -28,9 +38,10 @@ async def lifespan(app: FastAPI):
     # Startup
     print("\n🚀 Starting Favorly backend...")
     try:
-        init_firebase()
-        await get_mongo_client()
-        await init_collections()
+        supabase = get_supabase_client()
+        # Test connection
+        response = supabase.table("users").select("*").limit(1).execute()
+        print("✅ Supabase connected")
         print("\n✅ All systems ready!")
     except Exception as e:
         print(f"\n❌ Startup failed: {e}")
@@ -40,7 +51,6 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     print("\n🛑 Shutting down...")
-    await close_mongo_client()
     print("✅ Shutdown complete")
 
 
@@ -73,49 +83,15 @@ app.add_middleware(
 @app.get("/health", tags=["health"])
 async def health_check():
     """Health check endpoint."""
-    db = await get_db()
     try:
-        await db.command("ping")
-        return {"status": "ok", "mongodb": "connected"}
+        supabase = get_supabase_client()
+        supabase.table("users").select("*").limit(1).execute()
+        return {"status": "ok", "supabase": "connected"}
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={"status": "error", "mongodb": str(e)},
+            content={"status": "error", "supabase": str(e)},
         )
-
-
-# ============================================================================
-# WEBSOCKET REALTIME
-# ============================================================================
-
-@app.websocket("/ws/trips/{trip_id}")
-async def websocket_trip_updates(websocket: WebSocket, trip_id: str):
-    """
-    WebSocket endpoint for real-time trip updates.
-
-    Subscribes to changes in: trips, items, substitution_prompts, settlements
-    related to this trip_id.
-    """
-    await manager.connect(websocket, trip_id)
-    try:
-        # Send welcome message
-        await websocket.send_json({
-            "type": "connected",
-            "trip_id": trip_id,
-            "message": "Connected to trip updates",
-        })
-
-        # Keep connection alive
-        while True:
-            # Wait for any message from client (ping, etc.)
-            data = await websocket.receive_text()
-            if data == "ping":
-                await websocket.send_json({"type": "pong"})
-
-    except Exception as e:
-        print(f"WebSocket error: {e}")
-    finally:
-        manager.disconnect(websocket, trip_id)
 
 
 # ============================================================================
@@ -123,7 +99,7 @@ async def websocket_trip_updates(websocket: WebSocket, trip_id: str):
 # ============================================================================
 
 @app.post("/trips", tags=["trips"])
-async def create_trip(trip: dict, current_user: dict = Depends(get_current_user)):
+async def create_trip(trip: dict):
     """Create a new trip."""
     return {"status": "stub", "message": "POST /trips not implemented yet"}
 
@@ -135,50 +111,31 @@ async def get_trip(trip_id: str):
 
 
 @app.patch("/trips/{trip_id}/status", tags=["trips"])
-async def update_trip_status(
-    trip_id: str,
-    status_update: dict,
-    current_user: dict = Depends(get_current_user),
-):
+async def update_trip_status(trip_id: str, status_update: dict):
     """Update trip status (open → shopping → settling → done)."""
     return {"status": "stub", "message": "PATCH /trips/{trip_id}/status not implemented yet"}
 
 
 @app.post("/trips/{trip_id}/requests", tags=["requests"])
-async def create_request(
-    trip_id: str,
-    request_data: dict,
-    current_user: dict = Depends(get_current_user),
-):
+async def create_request(trip_id: str, request_data: dict):
     """Create a request (attach items to a trip)."""
     return {"status": "stub", "message": "POST /trips/{trip_id}/requests not implemented yet"}
 
 
 @app.patch("/requests/{request_id}", tags=["requests"])
-async def update_request(
-    request_id: str,
-    update_data: dict,
-    current_user: dict = Depends(get_current_user),
-):
+async def update_request(request_id: str, update_data: dict):
     """Accept or decline a request."""
     return {"status": "stub", "message": "PATCH /requests/{request_id} not implemented yet"}
 
 
 @app.post("/parses", tags=["parses"])
-async def create_parse(
-    parse_data: dict,
-    current_user: dict = Depends(get_current_user),
-):
+async def create_parse(parse_data: dict):
     """Create a parse (text, photo, or voice list)."""
     return {"status": "stub", "message": "POST /parses not implemented yet"}
 
 
 @app.patch("/parses/{parse_id}/confirm", tags=["parses"])
-async def confirm_parse(
-    parse_id: str,
-    confirmation_data: dict,
-    current_user: dict = Depends(get_current_user),
-):
+async def confirm_parse(parse_id: str, confirmation_data: dict):
     """Confirm parsed items before submitting."""
     return {"status": "stub", "message": "PATCH /parses/{parse_id}/confirm not implemented yet"}
 
@@ -190,51 +147,31 @@ async def get_merged_list(trip_id: str):
 
 
 @app.post("/trips/{trip_id}/substitutions", tags=["substitutions"])
-async def create_substitution_prompt(
-    trip_id: str,
-    substitution_data: dict,
-    current_user: dict = Depends(get_current_user),
-):
+async def create_substitution_prompt(trip_id: str, substitution_data: dict):
     """Create a substitution prompt (shopper found shelf photo)."""
     return {"status": "stub", "message": "POST /trips/{trip_id}/substitutions not implemented yet"}
 
 
 @app.patch("/substitutions/{substitution_id}", tags=["substitutions"])
-async def respond_to_substitution(
-    substitution_id: str,
-    response_data: dict,
-    current_user: dict = Depends(get_current_user),
-):
+async def respond_to_substitution(substitution_id: str, response_data: dict):
     """Requester chooses a substitute or skips."""
     return {"status": "stub", "message": "PATCH /substitutions/{substitution_id} not implemented yet"}
 
 
 @app.post("/trips/{trip_id}/receipts", tags=["receipts"])
-async def create_receipt(
-    trip_id: str,
-    receipt_data: dict,
-    current_user: dict = Depends(get_current_user),
-):
+async def create_receipt(trip_id: str, receipt_data: dict):
     """Upload and parse receipt."""
     return {"status": "stub", "message": "POST /trips/{trip_id}/receipts not implemented yet"}
 
 
 @app.patch("/receipts/{receipt_id}/assignments", tags=["receipts"])
-async def update_receipt_assignments(
-    receipt_id: str,
-    assignments_data: dict,
-    current_user: dict = Depends(get_current_user),
-):
+async def update_receipt_assignments(receipt_id: str, assignments_data: dict):
     """Confirm receipt line assignments."""
     return {"status": "stub", "message": "PATCH /receipts/{receipt_id}/assignments not implemented yet"}
 
 
 @app.post("/trips/{trip_id}/handoff", tags=["handoff"])
-async def handoff_trip(
-    trip_id: str,
-    handoff_data: dict | None = None,
-    current_user: dict = Depends(get_current_user),
-):
+async def handoff_trip(trip_id: str, handoff_data: dict | None = None):
     """Confirm delivery, mark trip done, update ledger."""
     return {"status": "stub", "message": "POST /trips/{trip_id}/handoff not implemented yet"}
 
@@ -246,7 +183,7 @@ async def get_circle_ledger(circle_id: str):
 
 
 # ============================================================================
-# CUSTOM OPENAPI SCHEMA (for easy TypeScript generation)
+# CUSTOM OPENAPI SCHEMA (for TypeScript generation)
 # ============================================================================
 
 def custom_openapi():
