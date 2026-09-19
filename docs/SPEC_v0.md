@@ -25,9 +25,9 @@ Four lanes, one shared contract. Lane owners can be swapped, but the boundaries 
 B swaps mock for real VLM (H8–14) → C wires realtime + substitution (H14–18) → D runs rehearsals (H18–24).
 
 **Interface rules**
-- Backend ↔ Frontend: REST JSON, every body/response is a Pydantic model serialized with `model_dump(mode="json")`; TS types generated from `openapi.json` (`openapi-typescript`). No hand-written TS types.
+- Backend ↔ Flutter: REST JSON, every body/response is a Pydantic model serialized with `model_dump(mode="json")`; Dart types generated from `openapi.json` (or hand-written, minimal). Flutter SDK: `supabase-flutter` for auth/storage/realtime.
 - Backend ↔ AI: in-process Python call through `VisionService` (no network hop in v0). AI returns a Pydantic model or raises `VisionError`; the backend persists the raw output in `parses.parsed_json` and never mutates it.
-- Realtime: Supabase Realtime on `trips`, `items`, `substitution_prompts`, `settlements` tables (Postgres changes). Frontend subscribes per `trip_id`. No custom WebSocket server.
+- Realtime: Supabase Realtime subscriptions on `trips`, `items`, `substitution_prompts`, `settlements` tables (Postgres NOTIFY/LISTEN). Flutter client subscribes per `trip_id`; backend WebSocket optional. Supabase broadcasts changes automatically.
 
 ---
 
@@ -35,29 +35,34 @@ B swaps mock for real VLM (H8–14) → C wires realtime + substitution (H14–1
 
 | Layer | Choice | Why |
 |---|---|---|
-| Frontend | **Next.js 14 (App Router) PWA**, TypeScript, Tailwind, `next-pwa` manifest, `@supabase/supabase-js` for realtime + auth | URLs not app stores; 3-phone demo in minutes |
+| Frontend | **Flutter 3.x**, Dart, native iOS/Android | Single codebase, native perf, 3 physical phones for demo |
 | Backend | **FastAPI** (Python 3.11), Pydantic v2, `uvicorn` | Pydantic models double as VLM output schemas — one source of truth |
-| DB / Auth / Storage / Realtime | **Supabase** (Postgres, Storage bucket `uploads`, Realtime, anon auth + invite code) | One box, no infra work |
+| Database | **Supabase** (PostgreSQL), `supabase-py` async client | One dashboard: auth, DB, storage, realtime. Free tier. |
+| Auth | **Supabase Auth** (magic link, Google, anon) | Built-in, JWT compatible, works with FastAPI + Flutter SDK |
+| Storage | **Supabase Storage** (S3-backed, images: lists, shelves, receipts) | Built-in to Supabase dashboard |
+| Realtime | **Supabase Realtime** (Postgres NOTIFY/LISTEN) | Automatic on table subscriptions; Flutter SDK + FastAPI WebSocket both work |
 | Primary VLM | **Meta Muse Spark** via Meta Model API — OpenAI-SDK-compatible, so `openai.OpenAI(base_url=META_BASE_URL, api_key=META_API_KEY)` | PRD requirement; same client code path as fallback |
 | Fallback VLM | **OpenAI `gpt-4o`** via the same `openai` SDK, `response_format={"type":"json_schema", ...}` from `Model.model_json_schema()` | Structured outputs enforce the contract at the API layer |
 | Speech | **OpenAI Whisper (`whisper-1`)**; fallback Deepgram `nova-2` | One-call transcript; transcript then goes through the text parser |
 | Structured output | `openai` SDK + `pydantic` `model_validate_json`; retry once with a "repair" prompt on `ValidationError` | Strict JSON guaranteed at the boundary |
 | Fuzzy matching | `rapidfuzz` (`token_set_ratio`) + a tiny synonym/brand table | Deterministic, offline, fast; no embedding service to run |
 | Image handling | `Pillow` (downscale to ≤1600px, EXIF rotate, JPEG q85 before upload) | Cuts VLM latency and cost — every beat must be <20s |
-| Deploy | Vercel (frontend), Fly.io or Railway (FastAPI), Supabase cloud | All free tiers, all URL-based |
-| Dev | `uv` for Python, `npm` workspaces for the frontend, `docker-compose` optional | |
+| Deploy | Flutter: TestFlight/Play Store beta, Fly.io (backend), Supabase cloud | All free tiers; physical phones for demo |
+| Dev | `uv` for Python, Flutter SDK, `docker-compose` optional | |
 
 Both VLM adapters implement the same `VisionService` Protocol; `VISION_PROVIDER=muse|openai|mock` selects
 at boot. Every VLM call is wrapped in `with_fallback(primary, fallback, cache_key)`: try Muse (timeout
 12s) → OpenAI → cached fixture keyed by the staged image's hash. This is how success criterion "every
-VLM-dependent demo beat has a cached fallback" is met structurally, not by hand.
+VLM-dependent demo beat has a cached fallback" is met structurally, not by hand. Cached fixtures and all
+metadata are stored in Supabase PostgreSQL (table: `cached_vision_responses`).
 
 ---
 
 ## 3. Pydantic models
 
 Package `shared/contracts` (`favorly_contracts`). All models: `ConfigDict(extra="forbid", str_strip_whitespace=True)`.
-IDs are `uuid4` strings; money is `Decimal` quantized to cents (`condecimal(ge=0, decimal_places=2)`),
+Stored in Supabase PostgreSQL tables (one model per table, e.g., `users`, `trips`, `items`).
+IDs are `uuid4` strings (stored as PostgreSQL `uuid` type); money is `Decimal` quantized to cents (`condecimal(ge=0, decimal_places=2)`),
 serialized as strings in JSON. Confidence is `float` in `[0,1]`.
 
 ### 3.1 Enums
@@ -323,10 +328,10 @@ Always: persist raw model text + provider + latency in parses.raw_ref metadata f
 ---
 
 ## 6. Test plan (what "contracts frozen" means)
-- `tests/test_contracts.py`: every fixture in `ai/fixtures/` validates against its model; `ReceiptSplit` reconciliation validator rejects a fixture off by $0.10.
+- `tests/test_contracts.py`: every fixture in `ai/fixtures/` validates against its model; `ReceiptSplit` reconciliation validator rejects a fixture off by $0.10. Fixtures are seeded into Supabase during test setup.
 - `tests/test_matching.py`: golden receipt (12 lines, 3 requesters, 1 substitute) → assignments and settlements sum to the receipt total to the cent; ambiguity band produces exactly the expected lines.
 - `tests/test_sections.py`: 40 item names → expected sections.
-- `tests/test_fallback.py`: primary raises → fallback used → cache used; provider recorded.
+- `tests/test_fallback.py`: primary raises → fallback used → cache checked in Supabase → provider recorded.
 
 ---
 
@@ -335,3 +340,4 @@ Always: persist raw model text + provider + latency in parses.raw_ref metadata f
 2. Tax share: proportional (PRD) vs. only on taxable lines — v0 goes proportional; confirm.
 3. Substitution timeout N: proposing 3 minutes for the demo, configurable per trip.
 4. Voice for "Post Trip" (PRD §8 beat 1): parse `store` + `depart_at` with the same text parser via a tiny `TripDraft` model (`store: str; depart_at: datetime; confidence`) — adding it to §3.3 unless you object.
+5. Flutter vs. native web: v0 uses Flutter (native iOS/Android); web PWA is a v1 post-launch concern if needed.

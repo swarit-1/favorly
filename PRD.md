@@ -70,11 +70,12 @@
 
 ## 6. Suggested Stack (Devin-friendly, boring on purpose)
 
-- **Frontend:** Next.js PWA (mobile-first) or Expo/React Native if team prefers native. PWA recommended for 3-phone demo speed (no app store, just URLs).
-- **Backend:** Node (Express/Fastify) or FastAPI. REST + WebSocket (or Supabase Realtime) for live list/substitution updates.
-- **DB:** Postgres (Supabase recommended: auth, realtime, storage for images in one box).
-- **Storage:** image uploads (lists, shelves, receipts) → Supabase storage/S3.
-- **Auth:** magic link or invite-code + display name (v0 minimal).
+- **Frontend:** Flutter 3.x (Dart) — single codebase iOS/Android, native performance, demo on physical phones.
+- **Backend:** FastAPI (Python 3.11). REST + WebSocket for live list/substitution updates.
+- **DB:** Supabase (PostgreSQL) — auth, database, storage, and realtime in one dashboard.
+- **Auth:** Supabase Auth (magic link, Google sign-in) — built-in, free tier.
+- **Storage:** image uploads (lists, shelves, receipts) → Supabase Storage (S3 backend).
+- **Realtime:** Supabase Realtime (Postgres NOTIFY/LISTEN) — automatic on table subscriptions.
 
 ## 7. Data Model (sketch)
 

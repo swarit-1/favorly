@@ -1,0 +1,47 @@
+{
+  "circle": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Maple Street Building",
+    "invite_code": "DEMO21",
+    "created_at": "2024-01-01T00:00:00Z"
+  },
+  "users": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "circle_id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Alice (Shopper)",
+      "venmo_handle": "alice-demo",
+      "created_at": "2024-01-01T00:00:00Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "circle_id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Bob (Requester)",
+      "venmo_handle": "bob-demo",
+      "created_at": "2024-01-01T00:00:00Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440003",
+      "circle_id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Carol (Requester)",
+      "venmo_handle": "carol-demo",
+      "created_at": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "prior_trips": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440010",
+      "shopper_id": "550e8400-e29b-41d4-a716-446655440001",
+      "circle_id": "550e8400-e29b-41d4-a716-446655440000",
+      "store": "Trader Joe's",
+      "depart_at": "2024-01-15T14:00:00Z",
+      "status": "done",
+      "created_at": "2024-01-15T12:00:00Z",
+      "caps": {
+        "max_requesters": 6,
+        "max_dollars_per_person": "40.00",
+        "max_items_per_person": 8
+      }
+    }
+  ]
+}
