@@ -109,21 +109,31 @@ class RouteSuggestionItem {
     required this.name,
     required this.qty,
     required this.section,
+    this.requesterId,
   });
 
   final String name;
   final int qty;
   final String section;
+  final String? requesterId;
 
   factory RouteSuggestionItem.fromJson(Map<String, dynamic> json) =>
       RouteSuggestionItem(
         name: _s(json['name']),
         qty: _i(json['qty']),
         section: _s(json['section']),
+        requesterId: json['requester_id'] == null
+            ? null
+            : _s(json['requester_id']),
       );
 
-  Map<String, dynamic> toJson() =>
-      {'name': name, 'qty': qty, 'section': section};
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'qty': qty,
+        'section': section,
+        if (requesterId != null && requesterId!.isNotEmpty)
+          'requester_id': requesterId,
+      };
 }
 
 /// One explained, one-tap suggestion. `kind` is neighbor, future_you, or

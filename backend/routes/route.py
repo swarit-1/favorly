@@ -273,7 +273,8 @@ def build_suggestions(
     seen_names = set()
 
     def add(kind: str, name: str, qty: int, section: str, title: str, reason: str,
-            added: float, requester_first: Optional[str] = None):
+            added: float, requester_first: Optional[str] = None,
+            requester_id: Optional[str] = None):
         if len(out) >= MAX_SUGGESTIONS:
             return
         key = name.strip().lower()
@@ -285,11 +286,14 @@ def build_suggestions(
             "kind": kind,
             "title": title,
             "reason": reason,
-            "item": {"name": name, "qty": qty, "section": section},
+            "item": {"name": name, "qty": qty, "section": section,
+                     "requester_id": requester_id},
             "added_distance_m": round(added, 1),
         }
         if requester_first:
             sug["requester_first"] = requester_first
+        if requester_id:
+            sug["requester_id"] = requester_id
         out.append(sug)
 
     for need in neighbor_needs or []:
@@ -301,7 +305,7 @@ def build_suggestions(
             "neighbor", need["name"], need.get("qty", 1), sec,
             f"{need['name'].capitalize()} for {first}",
             f"{first} needs {need['name']}. {_title(sec)} is already on your route. Adds 0 m.",
-            0.0, requester_first=first,
+            0.0, requester_first=first, requester_id=need.get("requester_id"),
         )
 
     for low in pantry_low or []:
@@ -470,7 +474,7 @@ def _load_neighbor_needs(shopper_id: str) -> List[dict]:
                     first = _first_name(user.data[0]["name"])
             except Exception:
                 pass
-            out.append({"name": hit[0], "section": hit[1], "requester_first": first})
+            out.append({"name": hit[0], "section": hit[1], "requester_first": first, "requester_id": str(row["person_id"])})
         return out
     except Exception:
         return []
