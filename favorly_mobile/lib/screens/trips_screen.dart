@@ -113,22 +113,15 @@ class _RecommendedFavorsState extends ConsumerState<_RecommendedFavors> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const SectionHeader('Favors for you'),
-            const Spacer(),
-            if (state.isRefreshing)
-              const CupertinoActivityIndicator(radius: 8)
-            else
-              Pressable(
-                label: 'Refresh favors',
-                onTap: () => ref
-                    .read(favorsProvider.notifier)
-                    .load(userId, force: true),
-                child: const Icon(CupertinoIcons.refresh,
-                    size: 18, color: FColors.inkSecondary),
-              ),
-          ],
+        // SectionHeader already lays out a title plus an action; wrapping it
+        // in another Row leaves its Expanded with unbounded width.
+        SectionHeader(
+          'Favors for you',
+          action: state.isRefreshing ? 'Refreshing...' : 'Refresh',
+          onAction: state.isRefreshing
+              ? null
+              : () =>
+                  ref.read(favorsProvider.notifier).load(userId, force: true),
         ),
         if (state.isLoading)
           const Padding(

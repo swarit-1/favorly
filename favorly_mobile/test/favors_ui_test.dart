@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:favorly_mobile/providers/auth_provider.dart';
 import 'package:favorly_mobile/providers/favors_provider.dart';
 import 'package:favorly_mobile/screens/favor_detail_screen.dart';
+import 'package:favorly_mobile/screens/trips_screen.dart';
 import 'package:favorly_mobile/services/trellis_client.dart';
 import 'package:favorly_mobile/theme/theme.dart';
 import 'package:favorly_mobile/widgets/favor_card.dart';
@@ -121,5 +122,56 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+  });
+
+  // The home screen is where the section actually lives. Rendering only the
+  // card and the detail screen missed a layout crash here: SectionHeader has
+  // an Expanded inside, so nesting it in another Row left it unbounded.
+  group('home screen section', () {
+    Future<void> pumpHome(WidgetTester tester, FavorsState seed) async {
+      tester.view.physicalSize = const Size(400, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          authProvider.overrideWith((ref) => _SeededAuth()),
+          favorsProvider.overrideWith((ref) => _SeededFavors(seed)),
+        ],
+        child: MaterialApp(
+          theme: buildFavorlyTheme(),
+          home: const TripsScreen(),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('renders with favors', (tester) async {
+      await pumpHome(tester, const FavorsState(favors: [_favor]));
+      expect(tester.takeException(), isNull);
+      expect(find.text('Favors for you'), findsOneWidget);
+    });
+
+    testWidgets('renders while refreshing', (tester) async {
+      await pumpHome(
+          tester, const FavorsState(favors: [_favor], isRefreshing: true));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('renders the empty state', (tester) async {
+      await pumpHome(tester, const FavorsState());
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('shows an API failure instead of hiding it', (tester) async {
+      await pumpHome(
+        tester,
+        const FavorsState(
+          error: 'Recommendations failed: https://favorly-agents.vercel.app '
+              'returned 500.',
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('favorly-agents.vercel.app'), findsOneWidget);
+    });
   });
 }

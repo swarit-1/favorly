@@ -148,7 +148,9 @@ class TrellisClient {
           .map((f) => FavorSuggestion.fromJson(Map<String, dynamic>.from(f)))
           .toList();
     } else {
-      throw Exception('Recommendations failed: ${response.body}');
+      throw Exception(
+          'Recommendations failed: $trellisBaseUrl returned '
+          '${response.statusCode}. ${response.body}');
     }
   }
 
