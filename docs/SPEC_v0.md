@@ -1,4 +1,4 @@
-# Favorly v0 — Engineering Spec (splits, models, pipelines, stack)
+pip install -r requirements.txt# Favorly v0 — Engineering Spec (splits, models, pipelines, stack)
 
 Companion to `PRD.md`. This document freezes three things so four people can build in parallel for 24h
 without stepping on each other: (1) the work splits and their contracts, (2) the Pydantic models that
