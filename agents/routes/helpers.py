@@ -180,6 +180,52 @@ async def get_helpers(
 ):
     """Rank people for a need. Side effect: stores the ordered shortlist."""
     need = await _get_need(conn, need_id)
+
+    # Integration fix: once invites exist, the story is frozen. Re-ranking
+    # would return invite_status null for everyone and drop an accepted
+    # helper entirely (they are busy now), so the app's polling would wipe
+    # its own pending mark and never see the acceptance. Serve the stored
+    # shortlist with live invite statuses instead; only after both sides
+    # said yes does `where` carry the unit.
+    inv_rows = await conn.fetch(
+        "SELECT helper_id, status FROM need_invites WHERE need_id = $1", need_id,
+    )
+    status_by_helper = {str(r["helper_id"]): r["status"] for r in inv_rows}
+    stored = _from_jsonb(need["shortlist"], [])
+    if status_by_helper and stored:
+        accepted_id = next(
+            (h for h, s in status_by_helper.items() if s == "accepted"), None,
+        )
+        unit = None
+        if accepted_id:
+            row = await conn.fetchrow(
+                "SELECT address_unit FROM app_people WHERE id = $1", accepted_id,
+            )
+            unit = row["address_unit"] if row else None
+        helpers = []
+        for s in stored:
+            pid = str(s.get("person_id") or "")
+            where = s.get("where")
+            if pid == accepted_id and unit:
+                where = f"Unit {unit}, {where}" if where else f"Unit {unit}"
+            helpers.append({
+                "person": {"id": pid, "display_name": s.get("first_name"),
+                           "first_name": s.get("first_name")},
+                "rank": s.get("rank"),
+                "tie": s.get("tie"),
+                "tie_label": s.get("tie_label"),
+                "hops": None,
+                "path": [],
+                "headline": s.get("headline"),
+                "where": where,
+                "reason": s.get("reason"),
+                "spark": s.get("spark"),
+                "signals": {},
+                "why": {},
+                "invite_status": status_by_helper.get(pid),
+            })
+        return {"need_id": str(need["id"]), "decided_by": "graph", "helpers": helpers}
+
     cache_key = f"{need['person_id']}:{(need['body'] or '').strip().lower()}"
 
     try:

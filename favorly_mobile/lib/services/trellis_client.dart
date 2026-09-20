@@ -326,16 +326,19 @@ class HelperMatch {
       );
 
   factory HelperMatch.fromJson(Map<String, dynamic> json) {
+    // The live asks endpoint sends flat helper rows ({person_id, first_name,
+    // rank, invite_status}) with no `person` map; tolerate both shapes.
     final person = json['person'] is Map
         ? Map<String, dynamic>.from(json['person'] as Map)
         : const <String, dynamic>{};
-    final displayName = '${person['display_name'] ?? ''}';
-    final rawFirst = '${person['first_name'] ?? ''}';
+    final displayName =
+        '${person['display_name'] ?? json['display_name'] ?? ''}';
+    final rawFirst = '${person['first_name'] ?? json['first_name'] ?? ''}';
     final rawPath = json['path'];
     final spark = json['spark'];
     final status = json['invite_status'];
     return HelperMatch(
-      personId: '${person['id'] ?? ''}',
+      personId: '${person['id'] ?? json['person_id'] ?? ''}',
       displayName: displayName,
       firstName: rawFirst.isNotEmpty
           ? rawFirst
@@ -394,7 +397,8 @@ class ParsedNeed {
     List<String> strings(dynamic v) =>
         v is List ? v.map((e) => '$e').where((s) => s.isNotEmpty).toList() : const [];
     return ParsedNeed(
-      id: '${json['id'] ?? ''}',
+      // The live asks endpoint flattens the need and names the id `need_id`.
+      id: '${json['id'] ?? json['need_id'] ?? ''}',
       category: FavorCategory.fromWire(json['category']),
       title: '${json['title'] ?? ''}',
       body: '${json['body'] ?? ''}',
@@ -489,10 +493,14 @@ class MyAsk {
               .map((h) => HelperMatch.fromJson(Map<String, dynamic>.from(h)))
               .toList()
           : const [],
+      // The live server names this `accepted_helper`.
       accepted: json['accepted'] is Map
           ? HelperMatch.fromJson(
               Map<String, dynamic>.from(json['accepted'] as Map))
-          : null,
+          : json['accepted_helper'] is Map
+              ? HelperMatch.fromJson(
+                  Map<String, dynamic>.from(json['accepted_helper'] as Map))
+              : null,
     );
   }
 }
