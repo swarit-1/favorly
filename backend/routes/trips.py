@@ -217,30 +217,45 @@ async def get_trip_suggestions(trip_id: UUID, limit: int = 5):
         created_at=parse_timestamp(trip_data["created_at"]),
     )
 
-    # Open trips in same circle, excluding this one
-    open_trips = supabase.table("trips").select("id") \
+    # All open trips in this circle (including this one)
+    all_trips = supabase.table("trips").select("id, shopper_id") \
         .eq("circle_id", str(trip.circle_id)) \
         .eq("status", TripStatus.OPEN.value) \
-        .neq("id", str(trip_id)).execute()
-    open_trip_ids = [t["id"] for t in (open_trips.data or [])]
-    if not open_trip_ids:
+        .execute()
+
+    # Get all trip IDs except the current one
+    trip_ids = [t["id"] for t in (all_trips.data or []) if t["id"] != str(trip_id)]
+
+    # Get shopper IDs (to exclude their own requests)
+    trip_shoppers = {t["id"]: t["shopper_id"] for t in (all_trips.data or [])}
+
+    if not trip_ids:
         return []
 
-    # Pending requests on those trips, not from the shopper
+    # Pending requests on those trips
     requests_resp = supabase.table("requests").select("id, trip_id, requester_id") \
-        .in_("trip_id", open_trip_ids) \
-        .eq("status", RequestStatus.PENDING.value) \
-        .neq("requester_id", str(trip.shopper_id)).execute()
+        .in_("trip_id", trip_ids) \
+        .eq("status", RequestStatus.PENDING.value).execute()
+
     if not requests_resp.data:
         return []
 
-    request_ids = [r["id"] for r in requests_resp.data]
-    items_resp = supabase.table("items").select("request_id, name, section") \
-        .in_("request_id", request_ids).execute()
+    # Exclude requests from the current trip's shopper
+    requests_resp.data = [
+        r for r in requests_resp.data
+        if r["requester_id"] != str(trip.shopper_id)
+    ]
+
+    if not requests_resp.data:
+        return []
 
     requester_ids = list({r["requester_id"] for r in requests_resp.data})
     users_resp = supabase.table("users").select("id, name").in_("id", requester_ids).execute()
     name_by_id = {u["id"]: u["name"] for u in (users_resp.data or [])}
+
+    request_ids = [r["id"] for r in requests_resp.data]
+    items_resp = supabase.table("items").select("request_id, name, section") \
+        .in_("request_id", request_ids).execute()
 
     items_by_request: dict[str, list] = {}
     names_by_request: dict[str, list[str]] = {}
