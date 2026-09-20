@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../dev/fixtures.dart';
+import '../models/favor_category.dart';
 import 'api_config.dart';
 
 /// Where the agent + graph service lives. Separate deployment from the errand
@@ -164,6 +166,14 @@ class FavorSuggestion {
   /// arrived as a recommendation, see [ClaimedFavor.toSuggestion].
   final MatchEvidence why;
 
+  /// v2, all default-safe so a pre-v2 cache still decodes: what kind of favor
+  /// this is (missing decodes as errand), when they need it in their words,
+  /// and whether they asked *you* specifically. Invited favors sort first
+  /// server-side; the app pins them with an "Asked for you" eyebrow.
+  final FavorCategory category;
+  final String whenText;
+  final bool invited;
+
   const FavorSuggestion({
     required this.needId,
     required this.title,
@@ -177,6 +187,9 @@ class FavorSuggestion {
     required this.signals,
     required this.posted,
     this.why = MatchEvidence.empty,
+    this.category = FavorCategory.errand,
+    this.whenText = '',
+    this.invited = false,
   });
 
   factory FavorSuggestion.fromJson(Map<String, dynamic> json) {
@@ -205,6 +218,10 @@ class FavorSuggestion {
       why: json['why'] is Map
           ? MatchEvidence.fromJson(Map<String, dynamic>.from(json['why'] as Map))
           : MatchEvidence.empty,
+      // v2 fields; a pre-v2 map simply has none of them.
+      category: FavorCategory.fromWire(json['category']),
+      whenText: '${json['when_text'] ?? ''}',
+      invited: json['invited'] == true,
     );
   }
 
@@ -221,7 +238,326 @@ class FavorSuggestion {
         'signals': Map<String, double>.from(signals),
         'posted': posted,
         'why': why.toJson(),
+        'category': category.wire,
+        'when_text': whenText,
+        'invited': invited,
       };
+}
+
+/// One stop on the social path between you and a helper: You · Nora · Marcus.
+class PathPerson {
+  const PathPerson({required this.id, required this.name});
+
+  final String id;
+  final String name;
+
+  factory PathPerson.fromJson(Map<String, dynamic> json) =>
+      PathPerson(id: '${json['id'] ?? ''}', name: '${json['name'] ?? ''}');
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+}
+
+/// One person Trellis picked to help with your ask, and the true, specific,
+/// human reason why. Never a score: the ranking argument stays on the server.
+class HelperMatch {
+  const HelperMatch({
+    required this.personId,
+    required this.displayName,
+    required this.firstName,
+    required this.rank,
+    required this.tie,
+    required this.tieLabel,
+    required this.hops,
+    required this.path,
+    required this.headline,
+    required this.where,
+    required this.reason,
+    this.spark,
+    this.signals = const {},
+    this.why = const {},
+    this.inviteStatus,
+  });
+
+  final String personId;
+  final String displayName;
+  final String firstName;
+  final int rank;
+
+  /// close | friend_of_friend | extended | new. The server owns the vocabulary.
+  final String tie;
+  final String tieLabel;
+  final int hops;
+  final List<PathPerson> path;
+  final String headline;
+
+  /// Relative pre-acceptance ("3 floors up"); the unit only after both sides
+  /// said yes.
+  final String where;
+  final String reason;
+  final String? spark;
+
+  /// Raw ranking signals. Kept for the wire round trip, never rendered.
+  final Map<String, dynamic> signals;
+  final Map<String, dynamic> why;
+
+  /// null | pending | accepted | declined.
+  final String? inviteStatus;
+
+  bool get isPending => inviteStatus == 'pending';
+  bool get isAccepted => inviteStatus == 'accepted';
+  bool get isDeclined => inviteStatus == 'declined';
+
+  HelperMatch withInviteStatus(String? status) => HelperMatch(
+        personId: personId,
+        displayName: displayName,
+        firstName: firstName,
+        rank: rank,
+        tie: tie,
+        tieLabel: tieLabel,
+        hops: hops,
+        path: path,
+        headline: headline,
+        where: where,
+        reason: reason,
+        spark: spark,
+        signals: signals,
+        why: why,
+        inviteStatus: status,
+      );
+
+  factory HelperMatch.fromJson(Map<String, dynamic> json) {
+    final person = json['person'] is Map
+        ? Map<String, dynamic>.from(json['person'] as Map)
+        : const <String, dynamic>{};
+    final displayName = '${person['display_name'] ?? ''}';
+    final rawFirst = '${person['first_name'] ?? ''}';
+    final rawPath = json['path'];
+    final spark = json['spark'];
+    final status = json['invite_status'];
+    return HelperMatch(
+      personId: '${person['id'] ?? ''}',
+      displayName: displayName,
+      firstName: rawFirst.isNotEmpty
+          ? rawFirst
+          : displayName.trim().split(RegExp(r'\s+')).first,
+      rank: (json['rank'] as num?)?.toInt() ?? 0,
+      tie: '${json['tie'] ?? ''}',
+      tieLabel: '${json['tie_label'] ?? ''}',
+      hops: (json['hops'] as num?)?.toInt() ?? 1,
+      path: rawPath is List
+          ? rawPath
+              .whereType<Map>()
+              .map((p) => PathPerson.fromJson(Map<String, dynamic>.from(p)))
+              .toList()
+          : const [],
+      headline: '${json['headline'] ?? ''}',
+      where: '${json['where'] ?? ''}',
+      reason: '${json['reason'] ?? ''}',
+      spark: spark == null || '$spark'.isEmpty ? null : '$spark',
+      signals: json['signals'] is Map
+          ? Map<String, dynamic>.from(json['signals'] as Map)
+          : const {},
+      why: json['why'] is Map
+          ? Map<String, dynamic>.from(json['why'] as Map)
+          : const {},
+      inviteStatus:
+          status == null || '$status'.isEmpty ? null : '$status',
+    );
+  }
+}
+
+/// What intake parsed your ask into, when it was in scope.
+class ParsedNeed {
+  const ParsedNeed({
+    required this.id,
+    required this.category,
+    required this.title,
+    required this.body,
+    this.requires = const [],
+    this.whenText = '',
+    this.durationMinutes,
+    this.items = const [],
+  });
+
+  final String id;
+  final FavorCategory category;
+  final String title;
+  final String body;
+  final List<String> requires;
+  final String whenText;
+  final int? durationMinutes;
+
+  /// Only for errands: the grocery-style items the list flow understands.
+  final List<String> items;
+
+  factory ParsedNeed.fromJson(Map<String, dynamic> json) {
+    List<String> strings(dynamic v) =>
+        v is List ? v.map((e) => '$e').where((s) => s.isNotEmpty).toList() : const [];
+    return ParsedNeed(
+      id: '${json['id'] ?? ''}',
+      category: FavorCategory.fromWire(json['category']),
+      title: '${json['title'] ?? ''}',
+      body: '${json['body'] ?? ''}',
+      requires: strings(json['requires']),
+      whenText: '${json['when_text'] ?? ''}',
+      durationMinutes: (json['duration_minutes'] as num?)?.toInt(),
+      items: strings(json['items']),
+    );
+  }
+}
+
+/// What POST /needs/intake made of the ask: parsed and created when in scope,
+/// or the sentence and rewrite to bounce back with when it is not.
+class IntakeResult {
+  const IntakeResult({
+    required this.intent,
+    required this.scope,
+    this.scopeReply,
+    this.rightSized,
+    this.need,
+    this.parsedBy = '',
+  });
+
+  /// ask_favor | offer_help | not_a_favor.
+  final String intent;
+
+  /// ok | too_big | needs_pro | not_ok | unclear.
+  final String scope;
+  final String? scopeReply;
+  final String? rightSized;
+  final ParsedNeed? need;
+  final String parsedBy;
+
+  bool get isOk => scope == 'ok' && need != null;
+
+  factory IntakeResult.fromJson(Map<String, dynamic> json) {
+    String? orNull(dynamic v) =>
+        v == null || '$v'.isEmpty || '$v' == 'null' ? null : '$v';
+    return IntakeResult(
+      intent: '${json['intent'] ?? ''}',
+      scope: '${json['scope'] ?? ''}',
+      scopeReply: orNull(json['scope_reply']),
+      rightSized: orNull(json['right_sized']),
+      need: json['need'] is Map
+          ? ParsedNeed.fromJson(Map<String, dynamic>.from(json['need'] as Map))
+          : null,
+      parsedBy: '${json['parsed_by'] ?? ''}',
+    );
+  }
+}
+
+/// One need you posted, as GET /people/{id}/asks returns it: the need, where
+/// it stands, everyone asked, and whoever said yes.
+class MyAsk {
+  const MyAsk({
+    required this.need,
+    required this.status,
+    this.helpers = const [],
+    this.accepted,
+  });
+
+  final ParsedNeed need;
+
+  /// open | claimed | fulfilled. The server owns the vocabulary.
+  final String status;
+  final List<HelperMatch> helpers;
+  final HelperMatch? accepted;
+
+  /// Whoever the pending invite is with, if anyone.
+  HelperMatch? get pending {
+    for (final h in helpers) {
+      if (h.isPending) return h;
+    }
+    return null;
+  }
+
+  bool get isFulfilled => status == 'fulfilled';
+
+  factory MyAsk.fromJson(Map<String, dynamic> json) {
+    final rawHelpers = json['helpers'];
+    return MyAsk(
+      need: json['need'] is Map
+          ? ParsedNeed.fromJson(Map<String, dynamic>.from(json['need'] as Map))
+          // PRD-DEVIATION: the asks contract is not pinned field-by-field in
+          // the lane doc; tolerate a flattened row where the need's fields sit
+          // at the top level.
+          : ParsedNeed.fromJson(json),
+      status: '${json['status'] ?? 'open'}',
+      helpers: rawHelpers is List
+          ? rawHelpers
+              .whereType<Map>()
+              .map((h) => HelperMatch.fromJson(Map<String, dynamic>.from(h)))
+              .toList()
+          : const [],
+      accepted: json['accepted'] is Map
+          ? HelperMatch.fromJson(
+              Map<String, dynamic>.from(json['accepted'] as Map))
+          : null,
+    );
+  }
+}
+
+/// GET /graph/stats: the degrees-apart line under the web.
+class GraphStats {
+  const GraphStats({
+    required this.people,
+    required this.ties,
+    required this.avgSeparation,
+    required this.triangles,
+  });
+
+  final int people;
+  final int ties;
+  final double avgSeparation;
+  final int triangles;
+
+  factory GraphStats.fromJson(Map<String, dynamic> json) => GraphStats(
+        people: (json['people'] as num?)?.toInt() ?? 0,
+        ties: (json['ties'] as num?)?.toInt() ?? 0,
+        avgSeparation: _asDouble(json['avg_separation']),
+        triangles: (json['triangles'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// What fulfilling a need did to the web, when the server says (both fields
+/// are additive; an older server simply sends neither).
+class FulfillResult {
+  const FulfillResult({
+    this.firstFavorTogether = false,
+    this.separationBefore,
+    this.separationAfter,
+  });
+
+  final bool firstFavorTogether;
+  final double? separationBefore;
+  final double? separationAfter;
+
+  factory FulfillResult.fromJson(Map<String, dynamic> json) {
+    final sep = json['separation'];
+    final sepMap = sep is Map ? Map<String, dynamic>.from(sep) : null;
+    return FulfillResult(
+      firstFavorTogether: json['first_favor_together'] == true,
+      separationBefore: sepMap == null ? null : _asDouble(sepMap['before']),
+      separationAfter: sepMap == null ? null : _asDouble(sepMap['after']),
+    );
+  }
+}
+
+/// What answering an invite returned: the new status, and on a decline the
+/// next best helper to slide into the vacated spot, when the server has one.
+class InviteAnswer {
+  const InviteAnswer({required this.status, this.next});
+
+  final String status;
+  final HelperMatch? next;
+
+  factory InviteAnswer.fromJson(Map<String, dynamic> json) => InviteAnswer(
+        status: '${json['status'] ?? ''}',
+        next: json['next'] is Map
+            ? HelperMatch.fromJson(
+                Map<String, dynamic>.from(json['next'] as Map))
+            : null,
+      );
 }
 
 /// A need this person has claimed, as `GET /needs?status=claimed` returns it.
@@ -283,6 +619,43 @@ class TrellisClient {
     String personId, {
     int limit = 10,
   }) async {
+    if (kUseFixtures) {
+      // PRD-DEVIATION: Appendix C has no recommendations fixture. One invited
+      // row plus one plain row keeps the fixture home screen honest about
+      // both looks (the pinned "Asked for you" and the ordinary card).
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      return [
+        FavorSuggestion.fromJson({
+          'need_id': 'need-fx-1',
+          'title': 'Borrow a ladder for an hour',
+          'action': 'Lend your ladder for about an hour today.',
+          'requested_by': {'id': 'p-swarit', 'display_name': 'Swarit Rao'},
+          'original_request': 'I need to borrow a ladder for an hour today',
+          'reason': 'You have a 6 ft ladder, and you both know Nora.',
+          'effort': 'low',
+          'score': 0,
+          'signals': {'capability': 1.0, 'tie': 0.6},
+          'posted': 'just now',
+          'category': 'borrow',
+          'when_text': 'today',
+          'invited': true,
+        }),
+        FavorSuggestion.fromJson({
+          'need_id': 'need-fx-2',
+          'title': 'Water two plants this weekend',
+          'action': 'Water the plants on the windowsill, Saturday or Sunday.',
+          'requested_by': {'id': 'p-nora', 'display_name': 'Nora Chen'},
+          'original_request': 'away this weekend, can anyone water my plants?',
+          'reason': 'Nora helped you carry groceries up last month.',
+          'effort': 'low',
+          'score': 0,
+          'signals': {'reciprocity': 0.8, 'nearness': 0.7},
+          'posted': '1h ago',
+          'category': 'care',
+          'when_text': 'this weekend',
+        }),
+      ];
+    }
     final response = await http.get(
       Uri.parse('$trellisBaseUrl/people/$personId/recommendations?limit=$limit'),
       headers: {'Content-Type': 'application/json'},
@@ -308,6 +681,7 @@ class TrellisClient {
     required String needId,
     required String personId,
   }) async {
+    if (kUseFixtures) return;
     final response = await http.post(
       Uri.parse('$trellisBaseUrl/needs/$needId/claim'),
       headers: {'Content-Type': 'application/json'},
@@ -322,7 +696,14 @@ class TrellisClient {
   }
 
   /// Mark it done. 409 unless the need is currently claimed.
-  static Future<void> fulfill({required String needId}) async {
+  ///
+  /// The v2 response also says what the favor did to the web
+  /// ([FulfillResult]); callers that only care that it worked can keep
+  /// awaiting this as before.
+  static Future<FulfillResult> fulfill({required String needId}) async {
+    if (kUseFixtures) {
+      return FulfillResult.fromJson(FixtureWorld.fulfill());
+    }
     final response = await http.post(
       Uri.parse('$trellisBaseUrl/needs/$needId/fulfill'),
       headers: {'Content-Type': 'application/json'},
@@ -332,6 +713,17 @@ class TrellisClient {
       throw TrellisConflict('Fulfill', response.body);
     } else if (response.statusCode != 200) {
       throw Exception('Fulfill failed: ${response.body}');
+    }
+    // The v1 service answered with nothing worth reading; only parse when the
+    // body actually is JSON, so an older deployment cannot fail a fulfilled
+    // favor after the fact.
+    try {
+      final body = _decodeJson(response, 'Fulfill');
+      return body is Map
+          ? FulfillResult.fromJson(Map<String, dynamic>.from(body))
+          : const FulfillResult();
+    } catch (_) {
+      return const FulfillResult();
     }
   }
 
@@ -366,6 +758,7 @@ class TrellisClient {
   /// it drops out of that list. This is how the app finds it again after a
   /// restart, on a device that never saw the recommendation.
   static Future<List<ClaimedFavor>> claimedBy(String personId) async {
+    if (kUseFixtures) return const [];
     final response = await http.get(
       Uri.parse('$trellisBaseUrl/needs?status=claimed'),
       headers: {'Content-Type': 'application/json'},
@@ -397,6 +790,19 @@ class TrellisClient {
   /// Scoped to their circle server-side: passing no person returns every
   /// account in the database, which is never what a member should be shown.
   static Future<FavorGraph> graph(String personId) async {
+    if (kUseFixtures) {
+      final g = FixtureWorld.graph(personId);
+      return FavorGraph(
+        nodes: (g['nodes'] as List)
+            .whereType<Map>()
+            .map((n) => GraphNode.fromJson(Map<String, dynamic>.from(n)))
+            .toList(),
+        edges: (g['edges'] as List)
+            .whereType<Map>()
+            .map((e) => GraphEdge.fromJson(Map<String, dynamic>.from(e)))
+            .toList(),
+      );
+    }
     final response = await http.get(
       Uri.parse('$trellisBaseUrl/graph?person_id=$personId'),
       headers: {'Content-Type': 'application/json'},
@@ -435,6 +841,17 @@ class TrellisClient {
     required String personId,
     required String otherId,
   }) async {
+    if (kUseFixtures) {
+      // Just enough for the tap-a-node card to say something true.
+      return FavorThread.fromJson({
+        'b': {'id': otherId, 'display_name': ''},
+        'favors': {},
+        'mutuals': [
+          {'display_name': 'Nora Chen'},
+        ],
+        'shared_claims': [],
+      });
+    }
     final response = await http.get(
       Uri.parse('$trellisBaseUrl/graph/thread/$personId/$otherId'),
       headers: {'Content-Type': 'application/json'},
@@ -445,6 +862,218 @@ class TrellisClient {
           _decodeJson(response, 'Thread') as Map<String, dynamic>);
     } else {
       throw Exception('Thread failed: ${response.body}');
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // v2: ask anything.
+  // -------------------------------------------------------------------------
+
+  /// POST /needs/intake: parse the ask, check it is neighbor-sized, and
+  /// create the need when it is. [confirmRightSized] re-submits a rewrite the
+  /// server previously offered and skips the scope check.
+  static Future<IntakeResult> intake({
+    required String personId,
+    required String text,
+    bool confirmRightSized = false,
+    String source = 'app',
+  }) async {
+    if (kUseFixtures) {
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      return IntakeResult.fromJson(
+          FixtureWorld.intake(text, confirmRightSized: confirmRightSized));
+    }
+    final response = await http.post(
+      Uri.parse('$trellisBaseUrl/needs/intake'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'person_id': personId,
+        'text': text,
+        'confirm_right_sized': confirmRightSized,
+        'source': source,
+      }),
+    ).catchError(_unreachable);
+
+    if (response.statusCode != 200) {
+      throw Exception('Intake failed: $trellisBaseUrl returned '
+          '${response.statusCode}. ${response.body}');
+    }
+    return IntakeResult.fromJson(
+        _decodeJson(response, 'Intake') as Map<String, dynamic>);
+  }
+
+  /// GET /needs/{id}/helpers: the ranked matches, three kinds of tie.
+  static Future<List<HelperMatch>> helpers(
+    String needId, {
+    int limit = 3,
+  }) async {
+    if (kUseFixtures) {
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      final body = FixtureWorld.helpers();
+      return (body['helpers'] as List)
+          .whereType<Map>()
+          .map((h) => HelperMatch.fromJson(Map<String, dynamic>.from(h)))
+          .toList();
+    }
+    final response = await http.get(
+      Uri.parse('$trellisBaseUrl/needs/$needId/helpers?limit=$limit'),
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode != 200) {
+      throw Exception('Helpers failed: $trellisBaseUrl returned '
+          '${response.statusCode}. ${response.body}');
+    }
+    final body = _decodeJson(response, 'Helpers') as Map<String, dynamic>;
+    final helpers = body['helpers'];
+    if (helpers is! List) return const [];
+    return helpers
+        .whereType<Map>()
+        .map((h) => HelperMatch.fromJson(Map<String, dynamic>.from(h)))
+        .toList();
+  }
+
+  /// POST /needs/{id}/invite: ask one person. Idempotent per pair; 409 when
+  /// the need is no longer open.
+  static Future<String> invite({
+    required String needId,
+    required String helperId,
+  }) async {
+    if (kUseFixtures) {
+      return '${FixtureWorld.invite(helperId)['status']}';
+    }
+    final response = await http.post(
+      Uri.parse('$trellisBaseUrl/needs/$needId/invite'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'helper_id': helperId}),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 409) {
+      throw TrellisConflict('Invite', response.body);
+    } else if (response.statusCode != 200) {
+      throw Exception('Invite failed: ${response.body}');
+    }
+    final body = _decodeJson(response, 'Invite') as Map<String, dynamic>;
+    return '${body['status'] ?? 'pending'}';
+  }
+
+  /// POST /needs/{id}/invites/{helper}/respond: yes or no. A decline may hand
+  /// back the next best helper.
+  static Future<InviteAnswer> respondInvite({
+    required String needId,
+    required String helperId,
+    required bool accept,
+  }) async {
+    if (kUseFixtures) {
+      return InviteAnswer.fromJson(
+          FixtureWorld.respondInvite(helperId, accept: accept));
+    }
+    final response = await http.post(
+      Uri.parse('$trellisBaseUrl/needs/$needId/invites/$helperId/respond'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'accept': accept}),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 409) {
+      throw TrellisConflict('Respond', response.body);
+    } else if (response.statusCode != 200) {
+      throw Exception('Respond failed: ${response.body}');
+    }
+    return InviteAnswer.fromJson(
+        _decodeJson(response, 'Respond') as Map<String, dynamic>);
+  }
+
+  /// POST /needs/{id}/broadcast: ask everyone instead of one person.
+  static Future<void> broadcast(String needId) async {
+    if (kUseFixtures) {
+      FixtureWorld.broadcast();
+      return;
+    }
+    final response = await http.post(
+      Uri.parse('$trellisBaseUrl/needs/$needId/broadcast'),
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 409) {
+      throw TrellisConflict('Broadcast', response.body);
+    } else if (response.statusCode != 200) {
+      throw Exception('Broadcast failed: ${response.body}');
+    }
+  }
+
+  /// POST /needs/{id}/cancel: take the ask down.
+  static Future<void> cancelNeed(String needId) async {
+    if (kUseFixtures) {
+      FixtureWorld.cancel();
+      return;
+    }
+    final response = await http.post(
+      Uri.parse('$trellisBaseUrl/needs/$needId/cancel'),
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 409) {
+      throw TrellisConflict('Cancel', response.body);
+    } else if (response.statusCode != 200) {
+      throw Exception('Cancel failed: ${response.body}');
+    }
+  }
+
+  /// GET /people/{id}/asks: the needs I posted that are still moving, plus
+  /// anything fulfilled in the last few minutes.
+  static Future<List<MyAsk>> myAsks(String personId) async {
+    if (kUseFixtures) {
+      final body = FixtureWorld.myAsks();
+      return (body['asks'] as List)
+          .whereType<Map>()
+          .map((a) => MyAsk.fromJson(Map<String, dynamic>.from(a)))
+          .toList();
+    }
+    final response = await http.get(
+      Uri.parse('$trellisBaseUrl/people/$personId/asks'),
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode != 200) {
+      throw Exception('Asks failed: $trellisBaseUrl returned '
+          '${response.statusCode}. ${response.body}');
+    }
+    final body = _decodeJson(response, 'Asks') as Map<String, dynamic>;
+    final asks = body['asks'];
+    if (asks is! List) return const [];
+    return asks
+        .whereType<Map>()
+        .map((a) => MyAsk.fromJson(Map<String, dynamic>.from(a)))
+        .toList();
+  }
+
+  /// GET /graph/stats: the degrees-apart line.
+  static Future<GraphStats> graphStats(String personId) async {
+    if (kUseFixtures) {
+      return GraphStats.fromJson(FixtureWorld.graphStats());
+    }
+    final response = await http.get(
+      Uri.parse('$trellisBaseUrl/graph/stats?person_id=$personId'),
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode != 200) {
+      throw Exception('Graph stats failed: $trellisBaseUrl returned '
+          '${response.statusCode}. ${response.body}');
+    }
+    return GraphStats.fromJson(
+        _decodeJson(response, 'Graph stats') as Map<String, dynamic>);
+  }
+
+  /// GET /health, fire-and-forget: Trellis cold-starts slowly on Vercel, so
+  /// the app pokes it on launch and never cares what comes back.
+  static Future<void> warmup() async {
+    if (kUseFixtures) return;
+    try {
+      await http.get(Uri.parse('$trellisBaseUrl/health'));
+    } catch (_) {
+      // Warmup is a nicety; a failure here says nothing the next real call
+      // will not say better.
     }
   }
 }
