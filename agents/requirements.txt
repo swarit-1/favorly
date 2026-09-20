@@ -1,0 +1,23 @@
+# Web framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# DB
+asyncpg>=0.29.0
+
+# Graph metrics
+networkx>=3.2
+
+# LLM / embeddings client (OpenAI-compatible)
+openai>=1.30.0
+
+# Validation
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+
+# Env
+python-dotenv>=1.0.0
+
+# Weight learning (logistic regression)
+scikit-learn>=1.4.0
+numpy>=1.26.0
