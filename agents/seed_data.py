@@ -9,6 +9,8 @@ service only tracks favors and grocery-relevant facts, it doesn't propose
 that anyone meet anyone.
 """
 
+import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import asyncpg
@@ -18,14 +20,14 @@ import extraction
 import canonicalization
 
 RESIDENTS = [
-    "Maya Chen", "Sam Okonkwo", "Priya Raman", "Dev Patel",
+    "Nora Chen", "Sam Okonkwo", "Priya Raman", "Dev Patel",
     "Elena Vasquez", "Marcus Hill", "Grace Adebayo", "Jordan Reyes",
 ]
 
 # (body, days_ago). Kept oblique on purpose -- a message that states the fact
 # outright proves nothing about the extractor.
 SEED_MESSAGES: dict[str, list[tuple[str, float]]] = {
-    "Maya Chen": [
+    "Nora Chen": [
         ("trying to eat vegetarian more this year, any easy recipes?", 4),
     ],
     "Sam Okonkwo": [
@@ -54,9 +56,9 @@ SEED_MESSAGES: dict[str, list[tuple[str, float]]] = {
 
 # (giver, receiver, days_ago). Skewed so Sam gives and rarely receives.
 SEED_FAVOR_EDGES = [
-    ("Sam Okonkwo", "Maya Chen", 9), ("Sam Okonkwo", "Dev Patel", 7),
+    ("Sam Okonkwo", "Nora Chen", 9), ("Sam Okonkwo", "Dev Patel", 7),
     ("Sam Okonkwo", "Priya Raman", 5), ("Sam Okonkwo", "Grace Adebayo", 3),
-    ("Maya Chen", "Priya Raman", 8), ("Elena Vasquez", "Marcus Hill", 6),
+    ("Nora Chen", "Priya Raman", 8), ("Elena Vasquez", "Marcus Hill", 6),
     ("Marcus Hill", "Grace Adebayo", 4), ("Elena Vasquez", "Jordan Reyes", 2),
 ]
 
@@ -70,8 +72,223 @@ SEED_NEEDS = [
 
 # Graph tables only. Identities are Supabase Auth accounts + `users` profile
 # rows and are never truncated by a seed -- mint them with
-# backend/seed/seed_auth_users.py.
-_SEED_TABLES = ("needs", "edges", "claims", "events")
+# backend/seed/seed_auth_users.py (v2 block: seed_block_identities.py).
+_SEED_TABLES = ("need_invites", "needs", "edges", "claims", "events")
+
+
+# ---------------------------------------------------------------------------
+# v2 "block" scenario -- the 16-person building (PRD Appendix A).
+# cast.py (backend) owns identity; the names here are strings resolved via
+# _resolve_identities, which fails loudly on drift. No cross-package imports.
+# Messages, not claims: extraction builds the profiles.
+# ---------------------------------------------------------------------------
+
+# "ASKER" is replaced with env DEMO_ASKER_NAME at seed time.
+_ASKER = "ASKER"
+
+BLOCK_RESIDENTS = [
+    "Marcus Hill", "Elena Vasquez", "Jordan Reyes", "Nora Chen",
+    "Sam Okonkwo", "Priya Raman", "Grace Adebayo", "Dev Patel",
+    "Tom Becker", "Lina Haddad", "Noah Kim",
+    "Ana Delgado", "Ben Okafor", "Chloe Marchetti", "Maya Iyer",
+]
+
+# Each message carries one or two facts (the mock extractor stops at five
+# claims per message). Extraction, not this table, builds the profile.
+BLOCK_MESSAGES: dict[str, list[str]] = {
+    _ASKER: [
+        "big F1 fan, I never miss a race weekend",
+        "I play chess most evenings",
+    ],
+    "Marcus Hill": [
+        "I have a 6 ft ladder and a drill if anyone ever needs them",
+        "pretty handy with tools, I built most of my own furniture",
+        "F1 fan, I watch every race",
+        "usually free Sunday afternoons",
+    ],
+    "Elena Vasquez": [
+        "I have a small step ladder for my plants",
+        "I garden on the roof most mornings",
+        "always shop at trader joe's for produce",
+    ],
+    "Jordan Reyes": [
+        "just moved in, I still have a ladder and a hand truck from the move",
+        "looking for people to run with",
+    ],
+    "Nora Chen": [
+        "trying to eat vegetarian this year",
+        "I climb at the gym twice a week",
+        "I work from home",
+    ],
+    "Sam Okonkwo": [
+        "I have a car and I'm at the store constantly, happy to grab things",
+        "I have a full toolbox",
+        "happy to help move furniture, I'm pretty strong",
+    ],
+    "Priya Raman": [
+        "I'm gluten free so I read every label",
+        "I walk my dog around the reservoir every evening",
+        "I set up the sound system for my band",
+    ],
+    "Grace Adebayo": [
+        "I don't have a car and I can't carry heavy bags anymore",
+        "I walk around the reservoir most evenings and would love company",
+        "I can sew and hem just about anything",
+    ],
+    "Dev Patel": [
+        "money is tight this month so I'm sticking to a list",
+        "I fix bikes for fun",
+        "I play chess on weekends",
+    ],
+    "Tom Becker": [
+        "retired carpenter, forty years on the job",
+        "I have every tool you can think of",
+        "I'm around most days",
+    ],
+    "Lina Haddad": [
+        "I have a projector and do movie nights",
+        "happy to help with speakers and TVs",
+    ],
+    "Noah Kim": [
+        "student, free most afternoons",
+        "I have a bike pump and a small toolkit",
+        "I climb and play chess",
+    ],
+    "Ana Delgado": [
+        "vegetarian, weekday Trader Joe's runs",
+        "I have a stand mixer and bake on Sundays",
+    ],
+    "Ben Okafor": [
+        "gluten free and dairy free",
+        "I work from home",
+        "I do audio engineering, happy to help with speakers",
+    ],
+    "Chloe Marchetti": [
+        "vegan, Saturday shopper",
+        "yoga every morning",
+    ],
+    "Maya Iyer": [
+        "Costco regular, I have a car",
+        "I have a folding table and extra chairs",
+    ],
+}
+
+# (giver, receiver, days_ago). Marcus sits two hops from the asker through
+# Nora (the triangle to close); Elena is one hop; Jordan has only neighbor
+# edges; Tom is nearly disconnected; Sam is the hub the balance signal rests.
+BLOCK_FAVORS = [
+    ("Nora Chen", _ASKER, 6), (_ASKER, "Nora Chen", 12), ("Elena Vasquez", _ASKER, 4),
+    ("Nora Chen", "Marcus Hill", 9), ("Marcus Hill", "Nora Chen", 3),
+    ("Sam Okonkwo", "Nora Chen", 9), ("Sam Okonkwo", "Dev Patel", 7),
+    ("Sam Okonkwo", "Priya Raman", 5), ("Sam Okonkwo", "Grace Adebayo", 3),
+    ("Sam Okonkwo", "Ana Delgado", 4),
+    ("Priya Raman", "Grace Adebayo", 5), ("Marcus Hill", "Grace Adebayo", 8),
+    ("Dev Patel", "Elena Vasquez", 10), ("Ana Delgado", "Elena Vasquez", 13),
+    ("Ana Delgado", "Ben Okafor", 6), ("Chloe Marchetti", "Ana Delgado", 9),
+    ("Maya Iyer", "Ben Okafor", 11), ("Lina Haddad", "Marcus Hill", 14),
+    ("Noah Kim", "Grace Adebayo", 2),
+]
+
+# Declared, undirected, does not decay.
+BLOCK_KNOWS = [
+    ("Nora Chen", "Marcus Hill"),      # climbing
+    ("Dev Patel", "Noah Kim"),         # chess
+    ("Ana Delgado", "Chloe Marchetti"),
+    ("Priya Raman", "Ben Okafor"),     # music
+]
+
+# (person, body, category, title, requires, when_text, hours_ago)
+BLOCK_NEEDS = [
+    ("Grace Adebayo", "could someone grab milk and eggs this week?",
+     "errand", "Grab milk and eggs", [], "this week", 5),
+    ("Dev Patel", "anyone know how to hem trousers?",
+     "skill", "Hem a pair of trousers", ["sewing"], None, 9),
+    ("Lina Haddad", "need a hand carrying a bookshelf up to 6A Saturday",
+     "hands", "Carry a bookshelf up", ["handy"], "saturday", 14),
+    ("Priya Raman", "anyone up for the reservoir loop with me and the dog tonight?",
+     "company", "Walk the reservoir loop", ["walking"], "tonight", 2),
+]
+
+
+async def _seed_block(conn: asyncpg.Connection) -> dict:
+    """The v2 building. Wipes graph tables first (identities survive)."""
+    now = datetime.now(timezone.utc)
+    asker_name = os.getenv("DEMO_ASKER_NAME", "Swarit Srivastava")
+
+    def name_of(n: str) -> str:
+        return asker_name if n == _ASKER else n
+
+    names = sorted({name_of(n) for n in BLOCK_RESIDENTS + [_ASKER]})
+    ids = await _resolve_identities(conn, names)
+
+    claims_made = 0
+    for name, messages in BLOCK_MESSAGES.items():
+        pid = ids[name_of(name)]
+        for i, body in enumerate(messages):
+            occurred_at = now - timedelta(days=20 - i)
+            event_row = await conn.fetchrow(
+                "INSERT INTO events (person_id, kind, body, occurred_at) "
+                "VALUES ($1, 'message', $2, $3) RETURNING id",
+                pid, body, occurred_at,
+            )
+            claims_made += len(
+                await extraction.process_event(conn, str(event_row["id"]), pid, body)
+            )
+
+    favors = 0
+    for giver, receiver, days_ago in BLOCK_FAVORS:
+        g_id, r_id = ids[name_of(giver)], ids[name_of(receiver)]
+        created_at = now - timedelta(days=days_ago)
+        event_row = await conn.fetchrow(
+            "INSERT INTO events (person_id, kind, body, occurred_at) "
+            "VALUES ($1, 'favor_logged', $2, $3) RETURNING id",
+            g_id, f"helped {name_of(receiver)} out", created_at,
+        )
+        await edges_mod.write_edge(
+            conn, g_id, r_id, "favor", event_id=str(event_row["id"]), created_at=created_at,
+        )
+        favors += 1
+
+    for a, b in BLOCK_KNOWS:
+        await edges_mod.write_edge(conn, ids[name_of(a)], ids[name_of(b)], "knows")
+
+    # Neighbor edges: every same-floor pair, generated from the profile rows.
+    floor_rows = await conn.fetch(
+        "SELECT id, address_floor FROM app_people WHERE id = ANY($1::uuid[])",
+        list(ids.values()),
+    )
+    by_floor: dict[str, list[str]] = {}
+    for r in floor_rows:
+        if r["address_floor"]:
+            by_floor.setdefault(str(r["address_floor"]), []).append(str(r["id"]))
+    neighbors = 0
+    for floor_ids in by_floor.values():
+        for i in range(len(floor_ids)):
+            for j in range(i + 1, len(floor_ids)):
+                await edges_mod.write_edge(conn, floor_ids[i], floor_ids[j], "neighbor")
+                neighbors += 1
+
+    for person, body, category, title, requires, when_text, hours_ago in BLOCK_NEEDS:
+        pid = ids[name_of(person)]
+        created_at = now - timedelta(hours=hours_ago)
+        event_row = await conn.fetchrow(
+            "INSERT INTO events (person_id, kind, body, occurred_at) "
+            "VALUES ($1, 'message', $2, $3) RETURNING id",
+            pid, body, created_at,
+        )
+        await extraction.process_event(conn, str(event_row["id"]), pid, body)
+        await conn.execute(
+            "INSERT INTO needs (person_id, body, event_id, created_at, category, title, requires, when_text) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            pid, body, str(event_row["id"]), created_at,
+            category, title, json.dumps(requires), when_text,
+        )
+
+    return {
+        "scenario": "block", "person_ids": ids, "claims_extracted": claims_made,
+        "favors_written": favors, "neighbor_edges": neighbors,
+        "needs_posted": len(BLOCK_NEEDS), "asker": asker_name,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +301,7 @@ _SEED_TABLES = ("needs", "edges", "claims", "events")
 # Neighbours added if missing, each with a message that real extraction turns
 # into a grocery-relevant claim.
 DEMO_NEIGHBORS = [
-    ("Maya Chen", "going vegetarian this year so I skip the meat aisle entirely"),
+    ("Nora Chen", "going vegetarian this year so I skip the meat aisle entirely"),
     ("Sam Okonkwo", "I have a car and I'm at the store constantly, happy to grab things"),
     ("Priya Raman", "I'm gluten free so I have to read every label"),
     ("Elena Vasquez", "I always shop at Trader Joe's, everything else feels wrong"),
@@ -96,12 +313,12 @@ DEMO_NEIGHBORS = [
 # and the graph has genuine mutual connections rather than a star.
 DEMO_FAVORS = [
     ("Sam Okonkwo", "Ana (Shopper)", 4),
-    ("Maya Chen", "Ana (Shopper)", 11),
+    ("Nora Chen", "Ana (Shopper)", 11),
     ("Sam Okonkwo", "Grace Adebayo", 6),
     ("Sam Okonkwo", "Dev Patel", 9),
-    ("Maya Chen", "Priya Raman", 7),
+    ("Nora Chen", "Priya Raman", 7),
     ("Ana (Shopper)", "Elena Vasquez", 13),
-    ("Elena Vasquez", "Maya Chen", 8),
+    ("Elena Vasquez", "Nora Chen", 8),
     ("Priya Raman", "Grace Adebayo", 5),
     ("Dev Patel", "Elena Vasquez", 10),
 ]
@@ -111,7 +328,7 @@ DEMO_NEEDS = [
     ("Grace Adebayo", "could someone grab milk, eggs and bread for me this week?", 4),
     ("Priya Raman", "need gluten free pasta if anyone is heading to the store", 9),
     ("Dev Patel", "running low on rice and lentils, nothing fancy needed", 22),
-    ("Maya Chen", "out of olive oil and coffee, can anyone help?", 31),
+    ("Nora Chen", "out of olive oil and coffee, can anyone help?", 31),
     ("Elena Vasquez", "need a big bag of onions if someone has room in the car", 14),
 ]
 
@@ -214,6 +431,9 @@ async def reset(conn: asyncpg.Connection):
 async def seed(conn: asyncpg.Connection, scenario: str = "warm") -> dict:
     await reset(conn)
     await canonicalization.seed_vocabulary(conn)
+
+    if scenario == "block":
+        return await _seed_block(conn)
 
     # Residents are real auth accounts, not rows this service invents.
     person_ids = await _resolve_identities(conn, RESIDENTS)

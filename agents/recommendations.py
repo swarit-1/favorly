@@ -31,11 +31,12 @@ from config import settings
 # nudge, owing someone is not. Freshness is a tiebreaker and never produces a
 # reason of its own ("posted recently" is not a reason to help anyone).
 WEIGHTS = {
-    "trip": 0.30,          # you already have a trip that covers this
-    "reciprocity": 0.25,   # they've helped you before
+    "trip": 0.20,          # you already have a trip that covers this
+    "capability": 0.20,    # you have the thing or the skill the ask needs
+    "reciprocity": 0.20,   # they've helped you before
     "mutual": 0.15,        # you share a connection
-    "fit": 0.15,           # your grocery claims complement their need
     "affinity": 0.10,      # you share the datapoints the ask depends on
+    "fit": 0.10,           # your grocery claims complement their need
     "freshness": 0.05,     # tiebreaker only
 }
 
@@ -248,8 +249,12 @@ def _build_reason(needer_name: str, parts: dict, detail: dict) -> str:
 
     # Ordered by how actionable each signal is, strongest first.
     fragments = []
+    if detail.get("invite_reason"):
+        fragments.append(detail["invite_reason"].rstrip("."))
     if detail["trip_reason"]:
         fragments.append(detail["trip_reason"])
+    if detail.get("capability_reason"):
+        fragments.append(detail["capability_reason"])
     if parts["reciprocity"] > 0:
         n = detail["favor_count"]
         fragments.append(
@@ -335,8 +340,21 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
         affinity, affinity_reason = _affinity(helper_claims, needer_claims, need["body"])
         freshness, age_hours = _freshness(need["created_at"])
 
+        # v2: do I have the thing or the skill this ask depends on?
+        import matching as matching_mod
+        requires = [
+            r for r in (matching_mod._from_jsonb(need["requires"], []) or []) if r
+        ]
+        cap, cap_headline = matching_mod.capability(
+            need["category"] or "errand", requires, helper_claims,
+        )
+        cap_reason = None
+        if cap > 0 and requires:
+            cap_reason = f"you have what they need: {requires[0]}"
+
         parts = {
             "trip": trip_score,
+            "capability": cap,
             "reciprocity": reciprocity,
             "mutual": mutual,
             "fit": fit,
@@ -350,9 +368,12 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
             "fit_reason": fit_reason,
             "affinity_reason": affinity_reason,
             "trip_reason": trip_reason,
+            "capability_reason": cap_reason,
             "ask": _summarize_ask(need["body"]),
             "age": _describe_age(age_hours),
         }
+        if need["invite_status"] == "pending":
+            detail["invite_reason"] = f"{need['display_name'].split()[0]} asked for you"
 
         out.append({
             "need_id": str(need["id"]),
@@ -376,7 +397,6 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
     for c in out:
         if c["invited"]:
             c["score"] = round(c["score"] + 0.5, 4)
-            c["detail"]["invite_reason"] = f"{c['needer_name'].split()[0]} asked for you."
     out.sort(key=lambda r: (not r["invited"], -r["score"]))
     return out[:limit]
 

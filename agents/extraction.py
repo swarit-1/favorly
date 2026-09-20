@@ -13,7 +13,11 @@ import llm
 # low-confidence observation still sits in the graph for debugging.
 EXTRACTION_MIN_CONFIDENCE = 0.3
 
-VALID_CLAIM_KINDS = ("dietary", "mobility", "budget", "preference")
+VALID_CLAIM_KINDS = (
+    "dietary", "mobility", "budget", "preference",
+    # v2: matching signal for any-favor ranking
+    "has_item", "skill", "interest", "availability",
+)
 
 
 async def process_event(conn: asyncpg.Connection, event_id: str, person_id: str, body: str) -> list[str]:

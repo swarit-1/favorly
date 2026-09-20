@@ -17,6 +17,10 @@ SEED_LABELS = [
     "dietary observance", "no car access", "has car access",
     "needs help carrying bags", "budget conscious", "store preference",
     "prefers organic", "brand preference",
+    # v2: any-favor matching vocabulary
+    "ladder", "drill", "tools", "car", "handy with tools", "audio setup",
+    "bike repair", "sewing", "formula 1", "climbing", "running", "walking",
+    "chess", "gardening", "dog owner", "free weekends", "works from home",
 ]
 
 # In-process cache: canonical -> embedding. Populated at startup, appended to

@@ -36,9 +36,11 @@ async def write_edge(
 
 
 async def all_edges_decayed(conn: asyncpg.Connection) -> list[dict]:
+    # `knows` and `neighbor` are structural, not events -- they do not decay.
+    decay = _DECAY_SQL.replace("$__decay__", "$1")
     sql = (
         "SELECT src_id, dst_id, kind, "
-        f"SUM(weight * {_DECAY_SQL.replace('$__decay__', '$1')}) AS strength "
+        f"SUM(weight * CASE WHEN kind IN ('favor','co_occurrence') THEN {decay} ELSE 1 END) AS strength "
         "FROM edges GROUP BY src_id, dst_id, kind"
     )
     rows = await conn.fetch(sql, settings.EDGE_DECAY_SECONDS)

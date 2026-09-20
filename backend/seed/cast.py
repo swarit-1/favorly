@@ -147,8 +147,51 @@ MAYA = DemoCharacter(
     address_lng=-71.1170,
 )
 
-# All characters in order (shopper first, then requesters)
-ALL_CHARACTERS = [ANA, BEN, CHLOE, MAYA]
+# ============================================================================
+# v2 BLOCK CAST -- the 16-person building for the any-favor demo.
+# The canonical four above keep their ids; the rest get stable ids too, but
+# the v2 seeder adopts a pre-existing users row by exact name when one exists
+# (the shared database predates this cast), so ids in the DB may differ.
+# ============================================================================
+
+
+def _block_char(name: str, unit: str, floor: str, availability: list[str],
+                email: str, role: str = "both") -> DemoCharacter:
+    return DemoCharacter(
+        id=str(make_stable_uuid(name.lower().replace(" ", "-"))),
+        name=name, email=email, role=role,
+        venmo_handle=name.lower().replace(" ", "-"),
+        availability=availability, address_unit=unit, address_floor=floor,
+    )
+
+
+MARCUS = _block_char("Marcus Hill", "6C", "6", ["Sat", "Sun"], "marcus.hill@favorly.test")
+ELENA = _block_char("Elena Vasquez", "3D", "3", ["Mon", "Tue", "Wed", "Thu", "Fri"], "elena.vasquez@favorly.test")
+JORDAN = _block_char("Jordan Reyes", "2A", "2", ["Sat", "Sun"], "jordan.reyes@favorly.test")
+NORA = _block_char("Nora Chen", "4B", "4", ["Mon", "Tue", "Wed", "Thu", "Fri"], "nora.chen@favorly.test")
+SAM = _block_char("Sam Okonkwo", "5C", "5", ["every day"], "sam.okonkwo@favorly.test")
+PRIYA = _block_char("Priya Raman", "4D", "4", ["evenings"], "priya.raman@favorly.test")
+GRACE = _block_char("Grace Adebayo", "1A", "1", ["every day"], "grace.adebayo@favorly.test")
+DEV = _block_char("Dev Patel", "2D", "2", ["Sat", "Sun"], "dev.patel@favorly.test")
+TOM = _block_char("Tom Becker", "7A", "7", ["every day"], "tom.becker@favorly.test")
+LINA = _block_char("Lina Haddad", "6A", "6", ["evenings"], "lina.haddad@favorly.test")
+NOAH = _block_char("Noah Kim", "1C", "1", ["Mon", "Tue", "Wed", "Thu", "Fri"], "noah.kim@favorly.test")
+
+# Units/floors for the canonical four in the block (kept from their profiles).
+for _c, _unit, _floor in ((ANA, "3B", "3"), (BEN, "5A", "5"), (CHLOE, "2C", "2"), (MAYA, "7F", "7")):
+    _c.address_unit, _c.address_floor = _unit, _floor
+
+# 15 fixed residents; the 16th is the presenter, added by the seeder under
+# their real name (env DEMO_ASKER_NAME, unit 3C / floor 3).
+BLOCK_CHARACTERS = [
+    MARCUS, ELENA, JORDAN, NORA, SAM, PRIYA, GRACE, DEV, TOM, LINA, NOAH,
+    ANA, BEN, CHLOE, MAYA,
+]
+
+# All characters (canonical four first -- seed_demo depends on that order),
+# then the rest of the v2 block.
+ALL_CHARACTERS = [ANA, BEN, CHLOE, MAYA,
+                  MARCUS, ELENA, JORDAN, NORA, SAM, PRIYA, GRACE, DEV, TOM, LINA, NOAH]
 
 # Requesters (excludes shopper for request generation)
 REQUESTERS = [BEN, CHLOE, MAYA]

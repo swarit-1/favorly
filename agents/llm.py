@@ -39,20 +39,25 @@ def _chat_json(system: str, user: str, timeout: float | None = None) -> dict:
 # preference) -- no capability/need/affinity mining, no matchmaking signal.
 # ============================================================================
 
-EXTRACTION_SYSTEM_PROMPT = """You extract grocery-relevant facts from one
-message in a neighborhood grocery-run app. Only extract facts that matter for
-grocery trips: dietary restrictions or preferences, mobility (car access,
-ability to carry bags, need for a ride), budget constraints, or store/brand
-preferences. Rules that matter more than the rest:
-1. Every claim must quote a literal, verbatim substring of the input as
-   `evidence`, with its exact character span. Not a paraphrase.
-2. Return an empty array freely -- most messages contain nothing relevant.
-   Do not invent a claim rather than returning nothing.
+EXTRACTION_SYSTEM_PROMPT = """You extract facts about a person from one message they sent in a neighborhood favor app. The facts help neighbors find the right person to ask for a small favor. Extract only what the person says about THEMSELVES, and only things they would be comfortable seeing on a building notice board.
+
+kinds:
+- has_item: a thing they own that a neighbor might borrow or benefit from (ladder, drill, car, folding table).
+- skill: something they know how to do (handy with tools, sets up audio gear, fixes bikes, sews).
+- interest: a hobby or routine (climbing, runs in the morning, formula 1, chess, gardening, has a dog).
+- availability: when they tend to be free or around (weekends, evenings, works from home).
+- mobility: car access, ability to carry heavy things, needs rides.
+- dietary, budget, preference: grocery-relevant facts, as before.
+
+Never extract: health beyond dietary needs, religion, politics, income, immigration or relationship status, anything about a third person, anything sexual, exact addresses, or dates when their home will be empty.
+
+Rules that matter more than the rest:
+1. Every claim must quote a literal, verbatim substring of the input as evidence. Not a paraphrase.
+2. Return an empty array freely. Most messages contain nothing. Do not invent a claim rather than returning nothing.
 3. Confidence is about the inference, not the writing.
-4. Nothing outside dietary/mobility/budget/preference -- no general
-   capabilities, hobbies, or life-stage facts unrelated to grocery shopping.
-Return JSON: {"claims": [{"kind": "dietary|mobility|budget|preference",
-"label": str, "confidence": float, "evidence": str, "span": [start, end]}]}"""
+4. label: 2 to 4 lowercase words naming the thing itself ("6 ft ladder", "handy with tools", "formula 1", "free sunday afternoons").
+
+Return JSON: {"claims":[{"kind":..., "label":..., "confidence":..., "evidence":..., "span":[start,end]}]}"""
 
 # Compact rule table used by the mock extractor. Scoped to grocery-relevant
 # signal only -- exists so the pipeline (span verification, canonicalization,
@@ -66,10 +71,37 @@ _MOCK_RULES = [
     (r"don't have a car|no car|not driving|can't drive", "mobility", "no car access", 0.7),
     (r"\bi have a (car|truck|suv)\b|happy to drive|can drive", "mobility", "has car access", 0.7),
     (r"can't carry|trouble carrying|heavy bags are hard", "mobility", "needs help carrying bags", 0.65),
-    (r"tight (on cash|budget)|on a budget|watching my spending", "budget", "budget conscious", 0.6),
+    (r"tight (on cash|budget)|money is tight|on a budget|watching my spending", "budget", "budget conscious", 0.6),
     (r"always shop at (trader joe'?s|whole foods|costco|aldi)", "preference", "store preference", 0.6),
     (r"only buy organic|prefer organic", "preference", "prefers organic", 0.6),
     (r"brand loyal|always get the same brand", "preference", "brand preference", 0.55),
+    # v2 (Appendix A.3): has_item / skill / interest / availability so
+    # MOCK_LLM=1 produces every seeded claim.
+    (r"\b(\d+ ?ft )?(step ?)?ladder\b", "has_item", "ladder", 0.8),
+    (r"\bdrill\b", "has_item", "drill", 0.75),
+    (r"\btool ?(box|kit)\b|every tool", "has_item", "tools", 0.75),
+    (r"hand truck|dolly", "has_item", "hand truck", 0.7),
+    (r"folding table", "has_item", "folding table", 0.7),
+    (r"projector", "has_item", "projector", 0.7),
+    (r"stand mixer", "has_item", "stand mixer", 0.7),
+    (r"bike pump", "has_item", "bike pump", 0.7),
+    (r"handy with tools|built most of my own|carpenter", "skill", "handy with tools", 0.75),
+    (r"sound system|audio engineering|speakers", "skill", "audio setup", 0.7),
+    (r"fix(es)? bikes", "skill", "bike repair", 0.7),
+    (r"\bsew\b|\bhem\b", "skill", "sewing", 0.7),
+    (r"help move furniture|pretty strong", "skill", "moving help", 0.65),
+    (r"\bf1\b|formula 1|race weekend", "interest", "formula 1", 0.7),
+    (r"\bchess\b", "interest", "chess", 0.7),
+    (r"\bclimb", "interest", "climbing", 0.7),
+    (r"people to run with|\brunning\b", "interest", "running", 0.7),
+    (r"walk (my dog )?around|reservoir", "interest", "walking", 0.7),
+    (r"\bmy dog\b", "interest", "dog owner", 0.7),
+    (r"\bgarden", "interest", "gardening", 0.7),
+    (r"\byoga\b", "interest", "yoga", 0.7),
+    (r"\bbak(e|ing)\b", "interest", "baking", 0.65),
+    (r"free (on )?(sunday|saturday|weekend)s?( afternoons?)?", "availability", "free weekends", 0.65),
+    (r"free most afternoons|around most days", "availability", "free afternoons", 0.65),
+    (r"work from home", "availability", "works from home", 0.65),
 ]
 
 
@@ -497,6 +529,34 @@ def decide_favors(context: dict) -> list[dict] | None:
         result = _chat_json(DECIDE_SYSTEM_PROMPT, json.dumps(context, default=str))
         favors = result.get("favors")
         return favors if isinstance(favors, list) else None
+    except Exception:
+        return None
+
+
+PHRASE_HELPERS_SYSTEM_PROMPT = """You introduce neighbors to each other in a favor app. You get one ask, the asker, and up to 5 candidates the graph already ranked. Each candidate has facts: true statements, already written in second person to the asker, and shared: things the two have in common.
+
+Return the best 3, best first. You may reorder or drop. You may NOT add people, and you may NOT state anything that is not in that candidate's facts.
+
+For each:
+- reason: 1 or 2 short sentences, at most 28 words, addressed to the asker as "you". Lead with why this person can do THIS favor, then the human tie. Use the specifics you were given: name the mutual friend, the floor, the shared interest.
+- spark: optional, at most 14 words. One light thing the two of them could talk about, drawn only from shared. null if shared is empty.
+
+Rules: no scores, ranks or percentages. No numbers about people except floors and counts given in facts. Never imply debt or obligation. Do not guess gender: use the name or "they". No em dashes or en dashes. Warm and plain, not salesy. When the candidates allow it, aim for three different kinds of tie: someone close, a friend of a friend, a new face.
+
+Return JSON: {"helpers":[{"person_id":str,"reason":str,"spark":str|null}]}"""
+
+
+def phrase_helpers(context: dict) -> list[dict] | None:
+    """Model phrases the graph's facts into reasons. None when unavailable so
+    the caller falls back to the deterministic templates. 2.5 s budget."""
+    if settings.MOCK_LLM or not settings.LLM_API_KEY:
+        return None
+    try:
+        result = _chat_json(
+            PHRASE_HELPERS_SYSTEM_PROMPT, json.dumps(context, default=str), timeout=2.5,
+        )
+        helpers = result.get("helpers")
+        return helpers if isinstance(helpers, list) else None
     except Exception:
         return None
 

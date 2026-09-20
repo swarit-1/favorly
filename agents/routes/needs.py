@@ -185,10 +185,43 @@ async def claim_need(need_id: str, payload: NeedClaimIn, conn: asyncpg.Connectio
     return {"id": need_id, "status": "claimed", "claimed_by": payload.person_id}
 
 
+async def _circle_graph(conn: asyncpg.Connection, person_id: str):
+    """Undirected graph over this person's circle, for separation metrics."""
+    import networkx as nx
+
+    row = await conn.fetchrow("SELECT circle_id FROM app_people WHERE id = $1", person_id)
+    members = await conn.fetch(
+        "SELECT id FROM app_people WHERE circle_id = $1", row["circle_id"] if row else None,
+    )
+    ids = {str(m["id"]) for m in members}
+    edge_rows = await conn.fetch("SELECT DISTINCT src_id, dst_id FROM edges WHERE src_id <> dst_id")
+    g = nx.Graph()
+    g.add_nodes_from(ids)
+    g.add_edges_from(
+        (str(r["src_id"]), str(r["dst_id"])) for r in edge_rows
+        if str(r["src_id"]) in ids and str(r["dst_id"]) in ids
+    )
+    return g
+
+
+def _avg_separation(g) -> float:
+    import networkx as nx
+
+    if g.number_of_nodes() <= 1 or g.number_of_edges() == 0:
+        return 0.0
+    biggest = max(nx.connected_components(g), key=len)
+    sub = g.subgraph(biggest)
+    if sub.number_of_nodes() <= 1:
+        return 0.0
+    return round(nx.average_shortest_path_length(sub), 2)
+
+
 @router.post("/needs/{need_id}/fulfill")
 async def fulfill_need(need_id: str, conn: asyncpg.Connection = Depends(get_conn)):
     """Marks it done and writes the favor edge -- which is what makes the next
-    recommendation to the person who was helped say "they helped you before"."""
+    recommendation to the person who was helped say "they helped you before".
+    v2 additions (backward compatible): `first_favor_together` and
+    `separation: {before, after}` so the reply can say the building got smaller."""
     need = await conn.fetchrow("SELECT * FROM needs WHERE id = $1", need_id)
     if not need:
         raise HTTPException(404, "need not found")
@@ -196,6 +229,16 @@ async def fulfill_need(need_id: str, conn: asyncpg.Connection = Depends(get_conn
         raise HTTPException(409, f"need is {need['status']}, expected claimed")
 
     helper_id, needer_id = str(need["claimed_by"]), str(need["person_id"])
+
+    prior = await conn.fetchrow(
+        "SELECT 1 FROM edges WHERE kind = 'favor' AND "
+        "((src_id = $1 AND dst_id = $2) OR (src_id = $2 AND dst_id = $1)) LIMIT 1",
+        helper_id, needer_id,
+    )
+    first_favor_together = prior is None
+    g_before = await _circle_graph(conn, needer_id)
+    sep_before = _avg_separation(g_before)
+
     event_row = await conn.fetchrow(
         "INSERT INTO events (person_id, kind, body) VALUES ($1, 'favor_logged', $2) RETURNING id",
         helper_id, f"helped with: {need['body']}",
@@ -206,7 +249,14 @@ async def fulfill_need(need_id: str, conn: asyncpg.Connection = Depends(get_conn
     )
     await sse.publish("edge_created", {"src": helper_id, "dst": needer_id, "kind": "favor"})
 
-    return {"id": need_id, "status": "fulfilled", "favor_logged": True}
+    g_before.add_edge(helper_id, needer_id)
+    sep_after = _avg_separation(g_before)
+
+    return {
+        "id": need_id, "status": "fulfilled", "favor_logged": True,
+        "first_favor_together": first_favor_together,
+        "separation": {"before": sep_before, "after": sep_after},
+    }
 
 
 @router.post("/needs/{need_id}/review")

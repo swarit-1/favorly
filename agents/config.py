@@ -51,7 +51,9 @@ class Settings:
     EDGE_DECAY_SECONDS: float = _float("EDGE_DECAY_SECONDS", 2592000.0)  # 30 days
     EDGE_WEIGHTS = {
         "favor": 1.0,
+        "knows": 0.6,          # declared/seeded, does not decay
         "co_occurrence": 0.3,
+        "neighbor": 0.25,      # same floor, generated, does not decay
     }
 
     PROFILE_CLAIM_CAP: int = 8
