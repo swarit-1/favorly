@@ -192,13 +192,30 @@ def parse_rules(text: str, now: Optional[datetime] = None) -> ParsedIntent:
         if m:
             items = _split_items(m.group("rest"))
             if items:
+                note = _preference_note(lowered)
+                if note:
+                    for item in items:
+                        item["note"] = item["note"] or note
                 return ParsedIntent(intent="ask_favor", items=items)
 
     return ParsedIntent(intent="help")
 
 
+_PREFERENCE_RE = re.compile(
+    r"\b(i (?:like|prefer|love)\b[^.?!]*|not (?:really |too )?picky[^.?!]*|any brand[^.?!]*)",
+    re.IGNORECASE,
+)
+
+
+def _preference_note(text: str) -> str | None:
+    """Pull a preference clause ('I like salty or sweet, not picky') into the note."""
+    m = _PREFERENCE_RE.search(text)
+    return m.group(1).strip(" ,") if m else None
+
+
 def _split_items(rest: str) -> list[dict]:
     rest = re.split(r"[.?!]", rest)[0]
+    rest = re.sub(r"^to\s+(?:get|grab|pick up|buy|have)\s+", "", rest)  # "need to get snacks"
     rest = re.sub(r"\bfrom\s+[\w' ]+$", "", rest)  # "eggs from trader joe's"
     parts = re.split(r",|\band\b|\+|&", rest)
     items = []
