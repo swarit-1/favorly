@@ -18,6 +18,7 @@ from shared.contracts.models import (
     User,
     RequestStatus,
 )
+from shared.timestamps import parse_timestamp
 
 router = APIRouter(prefix="/trips", tags=["merged_list"])
 
@@ -59,7 +60,7 @@ async def get_merged_list(trip_id: UUID):
                 circle_id=user_data["circle_id"],
                 name=user_data["name"],
                 venmo_handle=user_data.get("venmo_handle"),
-                created_at=datetime.fromisoformat(user_data["created_at"]),
+                created_at=parse_timestamp(user_data["created_at"]),
             )
 
             # Get items for this request
@@ -81,7 +82,7 @@ async def get_merged_list(trip_id: UUID):
                     status=ItemStatus(item_data["status"]),
                     substitute_of=item_data.get("substitute_of"),
                     actual_price=item_data.get("actual_price"),
-                    created_at=datetime.fromisoformat(item_data["created_at"]),
+                    created_at=parse_timestamp(item_data["created_at"]),
                 )
 
                 # Calculate running total and cap

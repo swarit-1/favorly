@@ -9,6 +9,7 @@ import os
 from supabase import create_client, Client
 
 from shared.contracts.models import User, Circle
+from shared.timestamps import parse_timestamp
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -38,7 +39,7 @@ async def get_user(user_id: UUID):
             circle_id=user_data["circle_id"],
             name=user_data["name"],
             venmo_handle=user_data.get("venmo_handle"),
-            created_at=datetime.fromisoformat(user_data["created_at"]),
+            created_at=parse_timestamp(user_data["created_at"]),
         )
     except HTTPException:
         raise
@@ -61,7 +62,7 @@ async def get_circle_members(circle_id: UUID):
                 circle_id=user_data["circle_id"],
                 name=user_data["name"],
                 venmo_handle=user_data.get("venmo_handle"),
-                created_at=datetime.fromisoformat(user_data["created_at"]),
+                created_at=parse_timestamp(user_data["created_at"]),
             ))
         return users
     except Exception as e:
@@ -83,7 +84,7 @@ async def get_circle_by_invite_code(invite_code: str):
             id=circle_data["id"],
             name=circle_data["name"],
             invite_code=circle_data["invite_code"],
-            created_at=datetime.fromisoformat(circle_data["created_at"]),
+            created_at=parse_timestamp(circle_data["created_at"]),
         )
     except HTTPException:
         raise

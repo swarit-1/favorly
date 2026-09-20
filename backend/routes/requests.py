@@ -9,6 +9,7 @@ import os
 from supabase import create_client, Client
 
 from shared.contracts.models import Request as RequestModel, RequestStatus, Item, ItemStatus, StoreSection
+from shared.timestamps import parse_timestamp
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 
@@ -95,7 +96,7 @@ async def create_request(trip_id: UUID, req: CreateRequestRequest, authorization
                     status=ItemStatus(item_data["status"]),
                     substitute_of=item_data.get("substitute_of"),
                     actual_price=item_data.get("actual_price"),
-                    created_at=datetime.fromisoformat(item_data["created_at"]),
+                    created_at=parse_timestamp(item_data["created_at"]),
                 ))
 
         return RequestModel(
@@ -104,7 +105,7 @@ async def create_request(trip_id: UUID, req: CreateRequestRequest, authorization
             requester_id=request_data["requester_id"],
             status=RequestStatus(request_data["status"]),
             items=items,
-            created_at=datetime.fromisoformat(request_data["created_at"]),
+            created_at=parse_timestamp(request_data["created_at"]),
         )
     except HTTPException:
         raise
@@ -141,7 +142,7 @@ async def get_request(request_id: UUID):
                 status=ItemStatus(item_data["status"]),
                 substitute_of=item_data.get("substitute_of"),
                 actual_price=item_data.get("actual_price"),
-                created_at=datetime.fromisoformat(item_data["created_at"]),
+                created_at=parse_timestamp(item_data["created_at"]),
             ))
 
         return RequestModel(
@@ -150,7 +151,7 @@ async def get_request(request_id: UUID):
             requester_id=request_data["requester_id"],
             status=RequestStatus(request_data["status"]),
             items=items,
-            created_at=datetime.fromisoformat(request_data["created_at"]),
+            created_at=parse_timestamp(request_data["created_at"]),
         )
     except HTTPException:
         raise
@@ -185,7 +186,7 @@ async def list_requests_by_trip(trip_id: UUID):
                     status=ItemStatus(item_data["status"]),
                     substitute_of=item_data.get("substitute_of"),
                     actual_price=item_data.get("actual_price"),
-                    created_at=datetime.fromisoformat(item_data["created_at"]),
+                    created_at=parse_timestamp(item_data["created_at"]),
                 ))
 
             requests.append(RequestModel(
@@ -194,7 +195,7 @@ async def list_requests_by_trip(trip_id: UUID):
                 requester_id=request_data["requester_id"],
                 status=RequestStatus(request_data["status"]),
                 items=items,
-                created_at=datetime.fromisoformat(request_data["created_at"]),
+                created_at=parse_timestamp(request_data["created_at"]),
             ))
 
         return requests
@@ -235,7 +236,7 @@ async def update_request_status(request_id: UUID, req: UpdateRequestStatusReques
                 status=ItemStatus(item_data["status"]),
                 substitute_of=item_data.get("substitute_of"),
                 actual_price=item_data.get("actual_price"),
-                created_at=datetime.fromisoformat(item_data["created_at"]),
+                created_at=parse_timestamp(item_data["created_at"]),
             ))
 
         return RequestModel(
@@ -244,7 +245,7 @@ async def update_request_status(request_id: UUID, req: UpdateRequestStatusReques
             requester_id=request_data["requester_id"],
             status=RequestStatus(request_data["status"]),
             items=items,
-            created_at=datetime.fromisoformat(request_data["created_at"]),
+            created_at=parse_timestamp(request_data["created_at"]),
         )
     except HTTPException:
         raise

@@ -9,9 +9,10 @@ assigns to the texting service: a trip handoff is a real-world favor, and a
 parsed request is a message that might carry capability/need signal. Both are
 forwarded here, fire-and-forget, so an outage in Trellis never breaks a trip.
 
-Requires both services to share the same person id space (Favorly `User.id` ==
-Trellis `people.id`). If a user hasn't been registered in Trellis yet, calls
-for that id will 404 there and are swallowed like any other failure.
+Both services share one id space because both read the same identity:
+`auth.users.id` == `users.id` == the `person_id` Trellis stores. There is no
+registration step -- creating the user's auth account and `users` profile row
+at signup is what makes them visible to Trellis, through its `app_people` view.
 """
 
 import logging
@@ -34,13 +35,6 @@ async def _post(path: str, payload: dict) -> None:
     except httpx.HTTPError as e:
         # Never let a Trellis outage break the errand-coordination flow.
         logger.warning("trellis %s call failed: %s", path, e)
-
-
-async def register_person(user_id: str, display_name: str, phone: str | None = None) -> None:
-    """Call this wherever a Favorly user is created (once that endpoint exists).
-    Passing id=user_id makes the two id spaces the same person, so every
-    log_favor/log_event call below just works -- no lookup or mapping table."""
-    await _post("/people", {"id": str(user_id), "display_name": display_name, "phone": phone})
 
 
 async def log_favor(giver_id: str, receiver_id: str, description: str) -> None:
