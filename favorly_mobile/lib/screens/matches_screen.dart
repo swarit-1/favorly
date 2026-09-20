@@ -478,9 +478,13 @@ class _WaitingLineState extends State<_WaitingLine>
         children: [
           const Icon(CupertinoIcons.ellipsis, size: 16, color: FColors.blue),
           const SizedBox(width: FSpace.sm),
-          Text(
-            'Waiting on ${widget.name}',
-            style: FType.bodySmallStrong.copyWith(color: FColors.blue),
+          Flexible(
+            child: Text(
+              'Waiting on ${widget.name}',
+              style: FType.bodySmallStrong.copyWith(color: FColors.blue),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),

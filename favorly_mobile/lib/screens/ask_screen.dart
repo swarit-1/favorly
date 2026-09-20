@@ -412,12 +412,14 @@ class _FindingSteps extends StatelessWidget {
                             ),
                 ),
                 const SizedBox(width: FSpace.md),
-                Text(
-                  _steps[i],
-                  style: i + 1 <= current
-                      ? FType.bodySmallStrong
-                      : FType.bodySmall
-                          .copyWith(color: FColors.inkTertiary),
+                Expanded(
+                  child: Text(
+                    _steps[i],
+                    style: i + 1 <= current
+                        ? FType.bodySmallStrong
+                        : FType.bodySmall
+                            .copyWith(color: FColors.inkTertiary),
+                  ),
                 ),
               ],
             ),
