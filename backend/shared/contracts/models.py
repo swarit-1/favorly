@@ -341,3 +341,36 @@ class SubstitutionPrompt(BaseModel):
     decision: Optional[SubstitutionDecision] = None
     chosen_index: Optional[int] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================================================
+# EXPERIENCE RATINGS & MEMBER COMPATIBILITY
+# ============================================================================
+
+class ExperienceRating(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    id: UUID = Field(default_factory=uuid4)
+    trip_id: UUID
+    circle_id: UUID
+    rated_by_id: UUID
+    rated_id: UUID
+    overall_rating: int = Field(ge=1, le=5)
+    reliability_rating: Optional[int] = Field(None, ge=1, le=5)
+    accuracy_rating: Optional[int] = Field(None, ge=1, le=5)
+    communication_rating: Optional[int] = Field(None, ge=1, le=5)
+    comment: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MemberCompatibility(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    id: UUID = Field(default_factory=uuid4)
+    circle_id: UUID
+    member_id_1: UUID
+    member_id_2: UUID
+    score: Decimal = Field(ge=0, le=1)
+    trips_worked_together: int = Field(ge=0, default=0)
+    average_rating: Optional[Decimal] = Field(None, ge=1, le=5)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

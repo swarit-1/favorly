@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
@@ -94,10 +95,39 @@ class TripsScreen extends ConsumerWidget {
           ),
         ],
       ],
-      bottom: FButton(
-        label: 'Post a trip',
-        icon: CupertinoIcons.plus,
-        onPressed: () => push(context, const PostTripScreen()),
+      bottom: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: FButton(
+                label: 'Add your list',
+                icon: CupertinoIcons.camera,
+                onPressed: () {
+                  // Find an open trip to add a list to
+                  if (active?.status == TripStatus.open) {
+                    push(context, AddListScreen(tripId: active!.id));
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('No open trip — post one first'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: FButton(
+                label: 'Post a trip',
+                icon: CupertinoIcons.plus,
+                onPressed: () => push(context, const PostTripScreen()),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

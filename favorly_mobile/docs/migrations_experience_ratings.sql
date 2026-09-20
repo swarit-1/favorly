@@ -2,6 +2,9 @@
 -- This migration adds tables to track collaboration quality and compute member compatibility.
 --
 -- Run this in Supabase SQL Editor or apply via: supabase db push
+--
+-- NOTE: Uses UUID for all IDs to match backend schema (setup_db.py)
+-- Maps to: users (not members), trips, circles, etc.
 
 -- ============================================================================
 -- Experience Ratings Table
@@ -10,11 +13,11 @@
 -- reconnect people who have positive history.
 
 CREATE TABLE IF NOT EXISTS experience_ratings (
-  id TEXT PRIMARY KEY,
-  trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
-  circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
-  rated_by_id TEXT NOT NULL REFERENCES members(id),
-  rated_id TEXT NOT NULL REFERENCES members(id),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  circle_id UUID NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+  rated_by_id UUID NOT NULL REFERENCES users(id),
+  rated_id UUID NOT NULL REFERENCES users(id),
 
   -- Overall satisfaction with the working relationship
   overall_rating INT NOT NULL CHECK (overall_rating >= 1 AND overall_rating <= 5),
@@ -49,10 +52,10 @@ CREATE INDEX IF NOT EXISTS idx_experience_ratings_circle ON experience_ratings(c
 --   - total_score = frequency_score + quality_score (0.0 to 1.0)
 
 CREATE TABLE IF NOT EXISTS member_compatibility_cache (
-  id TEXT PRIMARY KEY,
-  circle_id TEXT NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
-  member_id_1 TEXT NOT NULL REFERENCES members(id),
-  member_id_2 TEXT NOT NULL REFERENCES members(id),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  circle_id UUID NOT NULL REFERENCES circles(id) ON DELETE CASCADE,
+  member_id_1 UUID NOT NULL REFERENCES users(id),
+  member_id_2 UUID NOT NULL REFERENCES users(id),
 
   score NUMERIC NOT NULL, -- 0.0 to 1.0, rounded to 2 decimal places
   trips_worked_together INT DEFAULT 0,
@@ -75,11 +78,11 @@ CREATE INDEX IF NOT EXISTS idx_compatibility_members ON member_compatibility_cac
 -- Periodically call this to update member_compatibility_cache from experience_ratings.
 -- Can be triggered after each handoff or run on a schedule (e.g., nightly).
 
-CREATE OR REPLACE FUNCTION refresh_member_compatibility(p_circle_id TEXT DEFAULT NULL)
+CREATE OR REPLACE FUNCTION refresh_member_compatibility(p_circle_id UUID DEFAULT NULL)
 RETURNS void AS $$
 DECLARE
-  v_member_1 TEXT;
-  v_member_2 TEXT;
+  v_member_1 UUID;
+  v_member_2 UUID;
   v_score NUMERIC;
   v_trips INT;
   v_avg_rating NUMERIC;
@@ -110,7 +113,7 @@ BEGIN
     GROUP BY t.circle_id, member_id_1, member_id_2
   )
   SELECT
-    'compat_' || MD5(circle_id || member_id_1 || member_id_2),
+    gen_random_uuid(),
     circle_id,
     member_id_1,
     member_id_2,

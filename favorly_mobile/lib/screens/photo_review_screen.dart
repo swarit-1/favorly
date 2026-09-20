@@ -1,6 +1,8 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../providers/vision_provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/vision_api_client.dart';
@@ -40,7 +42,7 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
       final authState = ref.read(authProvider);
       final baseUrl = ApiConfig.baseUrl;
 
-      if (authState.user == null || authState.accessToken == null) {
+      if (authState.userId == null || authState.accessToken == null) {
         throw Exception('Not authenticated');
       }
 
@@ -60,33 +62,33 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
         case 'grocery_shopping':
           analysisResult = await apiClient.analyzePantry(
             imageFiles,
-            userId: authState.user!.id,
+            userId: authState.userId!,
           );
           break;
         case 'home_repair':
           analysisResult = await apiClient.analyzeDamage(
             imageFiles,
-            userId: authState.user!.id,
+            userId: authState.userId!,
             roomOrArea: null,
           );
           break;
         case 'yard_work':
           analysisResult = await apiClient.analyzeYardMaintenance(
             imageFiles,
-            userId: authState.user!.id,
+            userId: authState.userId!,
           );
           break;
         case 'pet_sitting':
           analysisResult = await apiClient.assessPet(
             imageFiles,
-            userId: authState.user!.id,
+            userId: authState.userId!,
             petInfo: {},
           );
           break;
         case 'cleaning':
           analysisResult = await apiClient.analyzeCleaningNeeds(
             imageFiles,
-            userId: authState.user!.id,
+            userId: authState.userId!,
             roomType: null,
           );
           break;
@@ -109,9 +111,8 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
       widget.onAnalysisComplete?.call(result);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Analysis complete!')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Analysis complete!')));
 
         // Wait a moment then go back
         await Future.delayed(const Duration(milliseconds: 500));
@@ -159,19 +160,14 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
     if (photos.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Review Photos')),
-        body: const Center(
-          child: Text('No photos captured'),
-        ),
+        body: const Center(child: Text('No photos captured')),
       );
     }
 
     final currentPhoto = photos[_currentPhotoIndex];
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: Text(widget.title), elevation: 0),
       body: Stack(
         children: [
           // Photo viewer
@@ -257,17 +253,14 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
                                     height: 16,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor:
-                                          AlwaysStoppedAnimation<Color>(
+                                      valueColor: AlwaysStoppedAnimation<Color>(
                                         Colors.white,
                                       ),
                                     ),
                                   )
                                 : const Icon(Icons.send),
                             label: Text(
-                              _isAnalyzing
-                                  ? 'Analyzing...'
-                                  : 'Analyze Photos',
+                              _isAnalyzing ? 'Analyzing...' : 'Analyze Photos',
                             ),
                           ),
                         ),

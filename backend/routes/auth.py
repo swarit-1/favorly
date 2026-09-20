@@ -1,8 +1,10 @@
 """Authentication routes."""
 
+import os
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
 from uuid import UUID
+from supabase import Client
 
 from db.client import get_supabase_client
 
