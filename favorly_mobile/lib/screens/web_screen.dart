@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/asks_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/favors_provider.dart';
 import '../providers/graph_provider.dart';
@@ -30,10 +33,59 @@ class WebScreen extends ConsumerStatefulWidget {
 
 class _WebScreenState extends ConsumerState<WebScreen> {
   GraphNode? _selected;
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    // The "done" moment lands on this screen: the dashed path snapping
+    // solid. Nobody else polls while the web is up, so it keeps its own
+    // gentle 4 s clock while an ask of yours is still moving.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAsks());
+    _poll = Timer.periodic(const Duration(seconds: 4), (_) {
+      final current = ref.read(asksProvider).current;
+      if (current != null && !current.isFulfilled) _refreshAsks();
+    });
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  void _refreshAsks() {
+    final meId = ref.read(authProvider).userId;
+    if (meId != null) {
+      ref.read(asksProvider.notifier).refresh(meId);
+    }
+  }
+
+  /// The social path the current ask is riding, as graph node ids. The
+  /// helpers contract writes "me" for the asker; the graph knows the real id.
+  List<String> _askPath(String meId) {
+    final ask = ref.watch(asksProvider).current;
+    if (ask == null) return const [];
+    final helper = ask.accepted ?? ask.pending;
+    if (helper == null) return const [];
+    return [
+      for (final p in helper.path) p.id == 'me' ? meId : p.id,
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     final meId = ref.watch(authProvider).userId;
+    // The moment a favor of yours is fulfilled, the web owes a redraw: the
+    // dashed path snaps into a solid edge and the numbers tighten.
+    ref.listen(asksProvider, (prev, next) {
+      final was = prev?.current?.isFulfilled ?? false;
+      final now = next.current?.isFulfilled ?? false;
+      if (!was && now && meId != null) {
+        ref.invalidate(favorGraphProvider(meId));
+        ref.invalidate(graphStatsProvider(meId));
+      }
+    });
     if (meId == null) {
       return const FavorlyPage(children: [
         EmptyState(
@@ -100,6 +152,10 @@ class _WebScreenState extends ConsumerState<WebScreen> {
     }
 
     final selected = _selected;
+    final ask = ref.watch(asksProvider).current;
+    final askPath = _askPath(meId);
+    final askDone = ask?.isFulfilled ?? false;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -113,6 +169,8 @@ class _WebScreenState extends ConsumerState<WebScreen> {
             graph: g,
             meId: meId,
             selectedId: selected?.id,
+            highlightPath: askPath,
+            highlightSolid: askDone,
             onSelect: (node) => setState(
               () => _selected = node?.id == _selected?.id ? null : node,
             ),
@@ -126,6 +184,18 @@ class _WebScreenState extends ConsumerState<WebScreen> {
           'web shows what is live, not everything that ever happened.',
           style: FType.caption.copyWith(color: FColors.inkTertiary),
         ),
+        if (askPath.length >= 2) ...[
+          const SizedBox(height: FSpace.xs),
+          Text(
+            askDone
+                ? 'That favor closed the loop: the dashed path is a real '
+                    'tie now.'
+                : 'The dashed blue path is your ask, on its way through '
+                    'people you already share.',
+            style: FType.caption.copyWith(color: FColors.blue),
+          ),
+        ],
+        _DegreesLine(meId: meId),
         if (selected != null && selected.id != meId) ...[
           const SizedBox(height: FSpace.lg),
           _ThreadCard(meId: meId, node: selected),
@@ -145,6 +215,41 @@ class _WebScreenState extends ConsumerState<WebScreen> {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// The one number the whole product argues for, said in one line: how many
+/// introductions apart the building is. Never a number about a person.
+class _DegreesLine extends ConsumerWidget {
+  const _DegreesLine({required this.meId});
+
+  final String meId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stats = ref.watch(graphStatsProvider(meId));
+    return stats.when(
+      // Quietly absent rather than a spinner: the map above already moves.
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (s) => Padding(
+        padding: const EdgeInsets.only(top: FSpace.md),
+        child: Row(
+          children: [
+            const Icon(CupertinoIcons.circle_grid_hex,
+                size: 15, color: FColors.blue),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Your building: ${s.avgSeparation.toStringAsFixed(1)} '
+                'degrees apart',
+                style: FType.bodySmallStrong,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -263,14 +368,14 @@ class _ThreadCard extends ConsumerWidget {
           _Fact(
             icon: CupertinoIcons.arrow_up_right,
             text: t.given.count == 0
-                ? 'You have not picked anything up for $first yet.'
+                ? 'You have not done $first a favor yet.'
                 : 'You helped $first ${plural(t.given.count, 'time')}'
                     '${t.given.lastAt == null ? '' : ', last ${agoLabel(t.given.lastAt)}'}.',
           ),
           _Fact(
             icon: CupertinoIcons.arrow_down_left,
             text: t.received.count == 0
-                ? '$first has not picked anything up for you yet.'
+                ? '$first has not done you a favor yet.'
                 : '$first helped you ${plural(t.received.count, 'time')}'
                     '${t.received.lastAt == null ? '' : ', last ${agoLabel(t.received.lastAt)}'}.',
           ),

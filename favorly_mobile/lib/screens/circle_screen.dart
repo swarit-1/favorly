@@ -7,6 +7,8 @@ import '../models/demo_cast.dart';
 import '../state/demo_store.dart';
 import '../theme/tokens.dart';
 import '../util/format.dart';
+import '../util/nav.dart';
+import 'web_screen.dart';
 import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
 import '../widgets/insurance_badge.dart';
@@ -33,6 +35,23 @@ class CircleScreen extends ConsumerWidget {
           subtitle: 'Neighbors helping neighbors',
           padding: EdgeInsets.only(top: 12, bottom: 18),
         ),
+        // The web first: the graph is the story of the circle, and this is
+        // the row the demo walks through before "done" snaps the path solid.
+        Panel(
+          children: [
+            PanelRow(
+              leading: const LeadingIcon(
+                CupertinoIcons.circle_grid_hex,
+                color: FColors.blue,
+                background: FColors.blueTint,
+              ),
+              title: 'See the web',
+              subtitle: 'How favors connect your circle',
+              onTap: () => push(context, const WebScreen()),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
         if (store.lastCompletedTripId != null) ...[
           Notice(
             'Trip delivered. Ledger updated.',

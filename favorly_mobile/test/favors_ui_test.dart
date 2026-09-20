@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:favorly_mobile/models/favor_category.dart';
 import 'package:favorly_mobile/providers/auth_provider.dart';
 import 'package:favorly_mobile/providers/favors_provider.dart';
 import 'package:favorly_mobile/screens/favor_detail_screen.dart';
@@ -49,6 +50,24 @@ const _other = FavorSuggestion(
   score: 0.4,
   signals: {'mutual': 0.5},
   posted: '20m ago',
+);
+
+/// v2: a borrow they asked *you* for, by name.
+const _invited = FavorSuggestion(
+  needId: 'need-3',
+  title: 'Borrow a ladder for an hour',
+  action: 'Lend your ladder for about an hour today.',
+  requesterId: 'swarit-1',
+  requesterName: 'Swarit Rao',
+  originalRequest: 'I need to borrow a ladder for an hour today',
+  reason: 'You have a 6 ft ladder, and you both know Nora.',
+  effort: 'low',
+  score: 0,
+  signals: {'capability': 1.0, 'tie': 0.6},
+  posted: 'just now',
+  category: FavorCategory.borrow,
+  whenText: 'today',
+  invited: true,
 );
 
 class _SeededFavors extends FavorsNotifier {
@@ -101,6 +120,51 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Later'), findsOneWidget);
+  });
+
+  // v2: they asked for you by name. The card wears the eyebrow and the
+  // category badge; the detail offers the quiet way to say no.
+  testWidgets('invited favor pins the eyebrow and the category badge',
+      (tester) async {
+    await tester.pumpWidget(_harness(
+      const Scaffold(body: FavorCard(favor: _invited)),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ASKED FOR YOU'), findsOneWidget);
+    expect(find.byType(CategoryBadge), findsOneWidget);
+    expect(find.byIcon(FavorCategory.borrow.icon), findsOneWidget);
+  });
+
+  testWidgets('invited detail offers Not this time', (tester) async {
+    tester.view.physicalSize = const Size(400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_harness(
+      const FavorDetailScreen(favor: _invited),
+      seed: const FavorsState(favors: [_invited]),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Not this time'), findsOneWidget);
+    // The server's sentence carries the why; the raw signal map never renders.
+    expect(find.textContaining('6 ft ladder'), findsWidgets);
+  });
+
+  testWidgets('borrow in progress says to close it out when it is back',
+      (tester) async {
+    tester.view.physicalSize = const Size(400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_harness(
+      const FavorDetailScreen(favor: _invited),
+      seed: FavorsState(active: _invited, activeStartedAt: DateTime.now()),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('back with you'), findsOneWidget);
   });
 
   testWidgets('detail shows their exact words and omits zero signals',

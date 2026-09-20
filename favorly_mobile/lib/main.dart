@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'providers/auth_provider.dart';
 import 'services/api_config.dart';
+import 'services/trellis_client.dart';
 import 'screens/auth_start_screen.dart';
 import 'screens/shell.dart';
 import 'theme/theme.dart';
@@ -13,6 +16,10 @@ import 'widgets/page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiConfig.load(); // a saved server URL wins over the compiled default
+
+  // Poke Trellis awake: it cold-starts slowly on Vercel, and the first real
+  // request of the demo should not be the one that pays for that.
+  unawaited(TrellisClient.warmup());
 
   // Initialize Supabase for RLS-authenticated queries and Realtime subscriptions
   await Supabase.initialize(

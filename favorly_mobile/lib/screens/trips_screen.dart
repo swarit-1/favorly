@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
+import '../providers/asks_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/favors_provider.dart';
 import '../services/trellis_client.dart';
@@ -21,12 +24,13 @@ import '../widgets/notification_bell.dart';
 import '../widgets/savings_meter.dart';
 import '../widgets/storm_banner.dart';
 import 'add_list_screen.dart';
+import 'ask_screen.dart';
 import 'favor_detail_screen.dart';
 import 'favor_finish_sheet.dart';
+import 'matches_screen.dart';
 import 'post_trip_screen.dart';
 import 'settlement_screen.dart';
 import 'shopping_screen.dart';
-import 'standalone_request_screen.dart';
 import 'trip_detail_screen.dart';
 
 /// Home: who needs you, and who you are already helping.
@@ -107,6 +111,7 @@ class TripsScreen extends ConsumerWidget {
             body: 'Take on one favor at a time. Whoever you are helping shows '
                 'up here with everything you need to finish it.',
           ),
+        const _MyAskSection(),
         const _RecommendedFavors(),
         const _AvailableTrips(),
         if (tripRows.isNotEmpty) ...[
@@ -123,20 +128,11 @@ class TripsScreen extends ConsumerWidget {
           children: [
             Expanded(
               child: FButton(
-                label: 'Add your list',
-                icon: CupertinoIcons.camera,
-                onPressed: () {
-                  // Find an open trip to add a list to, or save for later
-                  final openTrip = [
-                    ...store.upcomingTrips.where((t) => t.status == TripStatus.open),
-                    if (active?.status == TripStatus.open) active!,
-                  ].firstOrNull;
-                  if (openTrip != null) {
-                    push(context, AddListScreen(tripId: openTrip.id));
-                  } else {
-                    push(context, const StandaloneRequestScreen());
-                  }
-                },
+                // Any favor, not just groceries. "Add your list" moved inside
+                // the composer as the "Have a grocery list? Snap it" row.
+                label: 'Ask for anything',
+                icon: CupertinoIcons.sparkles,
+                onPressed: () => push(context, const AskScreen()),
               ),
             ),
             const SizedBox(width: 12),
@@ -178,6 +174,110 @@ class _ActiveFavor extends StatelessWidget {
         icon: CupertinoIcons.checkmark_alt,
         onPressed: () => showFavorFinishSheet(context, favor: favor),
       ),
+    );
+  }
+}
+
+/// The ask you have out: one card, one status line, tap for the matches.
+///
+/// Polls `GET /people/{id}/asks` every 4 seconds, but only while there is an
+/// open ask and this tab is the one showing; the timer dies with the widget.
+class _MyAskSection extends ConsumerStatefulWidget {
+  const _MyAskSection();
+
+  @override
+  ConsumerState<_MyAskSection> createState() => _MyAskSectionState();
+}
+
+class _MyAskSectionState extends ConsumerState<_MyAskSection> {
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    final userId = ref.read(authProvider).userId;
+    if (userId == null) return;
+    await ref.read(asksProvider.notifier).refresh(userId);
+    if (mounted) _syncPolling();
+  }
+
+  void _syncPolling() {
+    final wants = ref.read(asksProvider).hasOpen &&
+        ref.read(tabProvider) == FTab.trips;
+    if (wants && _poll == null) {
+      _poll = Timer.periodic(const Duration(seconds: 4), (_) {
+        // The tab may have changed between ticks; the next sync stops us.
+        if (ref.read(tabProvider) == FTab.trips) _refresh();
+      });
+    } else if (!wants && _poll != null) {
+      _poll?.cancel();
+      _poll = null;
+    }
+  }
+
+  /// One line about where the ask stands, always about the person.
+  String _status(MyAsk ask) {
+    final accepted = ask.accepted;
+    if (accepted != null) return '${accepted.firstName} is in';
+    final pending = ask.pending;
+    if (pending != null) return 'Waiting on ${pending.firstName}';
+    return 'Finding the right neighbor';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Keep the poll honest as state and tab flip underneath us.
+    ref.listen(asksProvider, (_, _) => _syncPolling());
+    ref.listen(tabProvider, (_, _) => _syncPolling());
+
+    final state = ref.watch(asksProvider);
+    if (state.asks.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHeader('My ask'),
+        Panel(
+          dividerIndent: 64,
+          children: [
+            for (final ask in state.asks)
+              PanelRow(
+                leading: LeadingIcon(
+                  ask.need.category.icon,
+                  color: FColors.blue,
+                  background: FColors.blueTint,
+                ),
+                title: ask.need.title,
+                subtitle: _status(ask),
+                subtitleStyle: ask.accepted != null
+                    ? FType.bodySmall.copyWith(color: FColors.success)
+                    : FType.bodySmall.copyWith(color: FColors.inkSecondary),
+                trailing: ask.accepted != null
+                    ? const StatusPill('In', kind: PillKind.success)
+                    : null,
+                onTap: () => push(
+                  context,
+                  MatchesScreen(
+                    needId: ask.need.id,
+                    title: ask.need.title,
+                    whenText: ask.need.whenText,
+                    initialHelpers: ask.helpers,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -248,7 +348,13 @@ class _RecommendedFavorsState extends ConsumerState<_RecommendedFavors> {
           Panel(
             dividerIndent: 74,
             children: [
-              for (final favor in state.favors)
+              // Invited favors first: the server already sorts them up, this
+              // only guarantees it survives a stale cache. Stable, not
+              // List.sort, so the ranking inside each group holds.
+              for (final favor in [
+                ...state.favors.where((f) => f.invited),
+                ...state.favors.where((f) => !f.invited),
+              ])
                 FavorCard(
                   favor: favor,
                   waiting: busy,

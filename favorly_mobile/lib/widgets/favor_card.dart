@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/favor_category.dart';
 import '../providers/favors_provider.dart';
 import '../services/trellis_client.dart';
 import '../theme/tokens.dart';
@@ -16,6 +17,34 @@ String effortLabel(String effort) => switch (effort) {
       'high' => 'Big lift',
       _ => 'Some effort',
     };
+
+/// What kind of favor, worn as a small glyph on the avatar's corner. Always
+/// paired with words somewhere on the surface; the badge is a reminder, not
+/// the only carrier.
+class CategoryBadge extends StatelessWidget {
+  const CategoryBadge(this.category, {super.key, this.size = 16});
+
+  final FavorCategory category;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: FColors.canvas,
+        shape: BoxShape.circle,
+        border: Border.all(color: FColors.hairline),
+      ),
+      child: Icon(
+        category.icon,
+        size: size * 0.62,
+        color: FColors.inkSecondary,
+      ),
+    );
+  }
+}
 
 /// One neighbor who could use a hand.
 ///
@@ -58,13 +87,34 @@ class FavorCard extends ConsumerWidget {
           children: [
             Opacity(
               opacity: onHold ? 0.45 : 1,
-              child: InitialsAvatar(name, size: 44),
+              // The person still leads; the category rides along as a 16 px
+              // glyph badge tucked under the avatar's shoulder.
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  InitialsAvatar(name, size: 44),
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: CategoryBadge(favor.category),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // They asked for you by name; that changes the row from a
+                  // suggestion into a knock on your door.
+                  if (favor.invited) ...[
+                    Eyebrow(
+                      'Asked for you',
+                      color: onHold ? FColors.inkTertiary : FColors.blue,
+                    ),
+                    const SizedBox(height: 2),
+                  ],
                   Text(
                     name,
                     style: FType.bodyStrong.copyWith(color: ink),
