@@ -137,7 +137,7 @@ async def health_check():
 # ROUTES
 # ============================================================================
 
-from routes import auth, trips, requests, users, merged_list, vision, experiences, messages, notifications, savings, storm, insurance, unlocks
+from routes import auth, trips, requests, users, merged_list, vision, experiences, messages, notifications, savings, storm, insurance, unlocks, route
 from routes.linq_webhook import router as linq_router
 
 print("\n📡 Registering routers...")
@@ -167,6 +167,8 @@ app.include_router(insurance.router)
 print("✅ Insurance router registered")
 app.include_router(unlocks.router)
 print("✅ Unlocks router registered")
+app.include_router(route.router)  # Favorly Route (Visa S2): POST /route/plan
+print("✅ Route planner registered")
 app.include_router(linq_router)  # Linq agent: inbound texts -> matching -> reply
 print("✅ Linq router registered\n")
 
