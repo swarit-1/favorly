@@ -87,11 +87,35 @@ class _AddListScreenState extends ConsumerState<AddListScreen> {
       _launchCamera();
       return;
     }
-    final drafts = ref.read(storeProvider).drafts(_source, text: _text.text);
+
+    late List<ItemDraft> drafts;
+
+    if (_source == IntakeSource.photo) {
+      // Parse all detected items from vision result — opt-out model
+      final lastAnalysis = ref.read(visionSessionProvider).lastAnalysis;
+      drafts = _parsedDetectedItems(lastAnalysis);
+    } else {
+      drafts = ref.read(storeProvider).drafts(_source, text: _text.text);
+    }
+
     push(
       context,
       ReviewListScreen(tripId: widget.tripId, drafts: drafts, source: _source),
     );
+  }
+
+  List<ItemDraft> _parsedDetectedItems(VisionAnalysisResult? analysis) {
+    if (analysis == null) return [];
+    final raw = analysis.result['detected_items'];
+    if (raw is! List) return [];
+    final drafts = <ItemDraft>[];
+    for (final item in raw) {
+      if (item is! Map<String, dynamic>) continue;
+      final name = item['name'] as String?;
+      if (name == null || name.trim().isEmpty) continue;
+      drafts.add(ItemDraft(name: name.trim()));
+    }
+    return drafts;
   }
 
   @override

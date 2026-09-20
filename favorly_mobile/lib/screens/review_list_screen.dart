@@ -124,6 +124,7 @@ class _ReviewListScreenState extends ConsumerState<ReviewListScreen> {
                   draft: _items[i],
                   onTap: () => _edit(i),
                   onConfirm: () => _confirm(i),
+                  onRemove: () => setState(() => _items.removeAt(i)),
                 ),
               PanelRow(
                 leading: const Icon(CupertinoIcons.plus_circle_fill, size: 24, color: FColors.blue),
@@ -192,11 +193,13 @@ class _DraftRow extends StatelessWidget {
     required this.draft,
     required this.onTap,
     required this.onConfirm,
+    required this.onRemove,
   });
 
   final ItemDraft draft;
   final VoidCallback onTap;
   final VoidCallback onConfirm;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -246,7 +249,12 @@ class _DraftRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  const Icon(CupertinoIcons.chevron_right, size: 18, color: FColors.inkTertiary),
+                  CupertinoButton(
+                    minSize: 0,
+                    padding: EdgeInsets.zero,
+                    onPressed: onRemove,
+                    child: Icon(CupertinoIcons.xmark_circle_fill, size: 20, color: FColors.inkTertiary),
+                  ),
                 ],
               ),
               if (flagged) ...[
