@@ -31,11 +31,12 @@ from config import settings
 # nudge, owing someone is not. Freshness is a tiebreaker and never produces a
 # reason of its own ("posted recently" is not a reason to help anyone).
 WEIGHTS = {
-    "trip": 0.35,          # you already have a trip that covers this
+    "trip": 0.30,          # you already have a trip that covers this
     "reciprocity": 0.25,   # they've helped you before
     "mutual": 0.15,        # you share a connection
     "fit": 0.15,           # your grocery claims complement their need
-    "freshness": 0.10,     # tiebreaker only
+    "affinity": 0.10,      # you share the datapoints the ask depends on
+    "freshness": 0.05,     # tiebreaker only
 }
 
 FRESHNESS_HALFLIFE_HOURS = 48.0
@@ -198,6 +199,33 @@ def _fit(helper_claims: list[dict], needer_claims: list[dict]) -> tuple[float, s
     return 0.0, None
 
 
+_AFFINITY_KINDS = {"dietary", "preference", "budget"}
+
+
+def _claim_label(c: dict) -> str:
+    return (c.get("canonical") or c.get("raw_label") or "").strip().lower()
+
+
+def _affinity(helper_claims: list[dict], needer_claims: list[dict], need_body: str) -> tuple[float, str | None]:
+    """Similar-datapoint signal — the competence version of homophily. A
+    gluten-free helper shopping a gluten-free ask buys the right bread on the
+    first try; same for keto, vegan, budget shoppers. Complements _fit (which
+    is about who *can* help): affinity is about who helps *well*. Mobility is
+    deliberately excluded — two carless people matching helps no one."""
+    helper = {_claim_label(c) for c in helper_claims if c.get("kind") in _AFFINITY_KINDS}
+    needer = {_claim_label(c) for c in needer_claims if c.get("kind") in _AFFINITY_KINDS}
+    helper.discard(""); needer.discard("")
+    shared = helper & needer
+    if shared:
+        label = sorted(shared, key=len, reverse=True)[0]
+        return (1.0 if len(shared) > 1 else 0.7), f"you both mentioned {label}"
+    body = need_body.lower()
+    known = sorted((l for l in helper if len(l) > 3 and l in body), key=len, reverse=True)
+    if known:
+        return 0.5, f"you know your way around {known[0]}"
+    return 0.0, None
+
+
 def _freshness(created_at: datetime) -> tuple[float, float]:
     hours = (datetime.now(timezone.utc) - created_at).total_seconds() / 3600
     return math.exp(-max(hours, 0) / FRESHNESS_HALFLIFE_HOURS), hours
@@ -231,6 +259,8 @@ def _build_reason(needer_name: str, parts: dict, detail: dict) -> str:
         fragments.append(f"you both know {', '.join(detail['mutual_names'][:2])}")
     if detail["fit_reason"]:
         fragments.append(detail["fit_reason"])
+    if detail.get("affinity_reason"):
+        fragments.append(detail["affinity_reason"])
 
     if not fragments:
         # No connection to draw on -- say the honest thing, and still lead with
@@ -297,7 +327,9 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
         reciprocity, favor_count = await _reciprocity(conn, helper_id, needer_id)
         mutual_names = await _mutuals(conn, helper_id, needer_id)
         mutual = min(len(mutual_names) / 2.0, 1.0)
-        fit, fit_reason = _fit(helper_claims, await _claims(conn, needer_id))
+        needer_claims = await _claims(conn, needer_id)
+        fit, fit_reason = _fit(helper_claims, needer_claims)
+        affinity, affinity_reason = _affinity(helper_claims, needer_claims, need["body"])
         freshness, age_hours = _freshness(need["created_at"])
 
         parts = {
@@ -305,6 +337,7 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
             "reciprocity": reciprocity,
             "mutual": mutual,
             "fit": fit,
+            "affinity": affinity,
             "freshness": freshness,
         }
         score = sum(WEIGHTS[k] * v for k, v in parts.items())
@@ -312,6 +345,7 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
             "favor_count": favor_count,
             "mutual_names": mutual_names,
             "fit_reason": fit_reason,
+            "affinity_reason": affinity_reason,
             "trip_reason": trip_reason,
             "ask": _summarize_ask(need["body"]),
             "age": _describe_age(age_hours),
