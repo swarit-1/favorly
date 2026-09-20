@@ -19,7 +19,7 @@ class TripIn(BaseModel):
 
 @router.post("/trips", status_code=201)
 async def create_trip(payload: TripIn, conn: asyncpg.Connection = Depends(get_conn)):
-    person = await conn.fetchrow("SELECT id FROM people WHERE id = $1", payload.shopper_id)
+    person = await conn.fetchrow("SELECT id FROM app_people WHERE id = $1", payload.shopper_id)
     if not person:
         raise HTTPException(404, "person not found")
     # One live trip per shopper keeps the signal honest.

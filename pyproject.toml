@@ -22,6 +22,10 @@ dependencies = [
   "supabase>=2.4.0",
   "python-dotenv>=1.0.0",
   "httpx>=0.27.0",
+  # Linq agent (backend/agent, backend/matching) — app.py mounts its router at
+  # import time, so a missing one of these is a total startup failure.
+  "anthropic>=0.40.0",
+  "rapidfuzz>=3.9.0",
 ]
 
 [tool.uv]

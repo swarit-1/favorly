@@ -125,7 +125,7 @@ JOIN auth.users a ON a.id = u.id;
 -- recommendations._upcoming_trip reads this for the `trip` signal.
 CREATE TABLE IF NOT EXISTS trips (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shopper_id  UUID NOT NULL REFERENCES people(id),
+  shopper_id  UUID NOT NULL REFERENCES users(id),
   store       TEXT NOT NULL,
   depart_at   TIMESTAMPTZ NOT NULL,
   status      TEXT NOT NULL DEFAULT 'open',   -- open | shopping | done
