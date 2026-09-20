@@ -197,7 +197,7 @@ class VisionApiClient {
   }
 
   /// JSON encode helper
-  String _jsonEncode(Map<String, dynamic> data) {
+  String _jsonEncode(dynamic data) {
     return data.toString(); // Use simple toString for form field
   }
 }

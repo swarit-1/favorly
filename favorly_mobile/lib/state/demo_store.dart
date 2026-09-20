@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/demo_cast.dart';
 import '../models/models.dart';
 
 final storeProvider =
@@ -45,12 +46,9 @@ class DemoStore extends ChangeNotifier {
     _seed();
   }
 
-  static const anaId = 'ana';
-  static const benId = 'ben';
-  static const chloeId = 'chloe';
-  static const mayaId = 'maya';
-  static const inviteCode = 'MAPLE7';
-  static const circleName = 'Maple St · Building B';
+  // Canonical demo cast - matches backend/seed/cast.py
+  static const inviteCode = DEMO_INVITE_CODE;
+  static const circleName = DEMO_CIRCLE_NAME;
   static const substitutionWindow = Duration(minutes: 3);
 
   final members = <Member>[];
@@ -58,8 +56,9 @@ class DemoStore extends ChangeNotifier {
   final receipts = <String, ReceiptSplit>{};
   final settlements = <String, List<Settlement>>{};
   final ledger = <String, LedgerRow>{};
+  final experiences = <String, ExperienceRating>{}; // tripId -> ratings map, keyed by "tripId:ratedById:ratedId"
 
-  String _meId = anaId;
+  String _meId = ANA_ID;
   bool joined = true;
   bool notificationsOn = true;
   SubstitutionPrompt? pendingPrompt;
@@ -789,6 +788,108 @@ class DemoStore extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
+  // Experience ratings + matching algorithm
+  // ---------------------------------------------------------------------------
+
+  // POST /experiences
+  ExperienceRating submitRating({
+    required String tripId,
+    required String ratedId,
+    required int overallRating,
+    int? reliabilityRating,
+    int? accuracyRating,
+    int? communicationRating,
+    String? comment,
+  }) {
+    final rating = ExperienceRating(
+      id: _id('exp'),
+      tripId: tripId,
+      ratedById: _meId,
+      ratedId: ratedId,
+      overallRating: overallRating,
+      reliabilityRating: reliabilityRating,
+      accuracyRating: accuracyRating,
+      communicationRating: communicationRating,
+      comment: comment,
+      createdAt: DateTime.now(),
+    );
+    final key = '$tripId:$_meId:$ratedId';
+    experiences[key] = rating;
+    notifyListeners();
+    return rating;
+  }
+
+  /// GET /experiences?ratedId={memberId}
+  List<ExperienceRating> ratingsFor(String memberId) => experiences.values
+      .where((e) => e.ratedId == memberId)
+      .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// GET /experiences?ratedById={memberId}
+  List<ExperienceRating> ratingsFrom(String memberId) => experiences.values
+      .where((e) => e.ratedById == memberId)
+      .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// Compute compatibility score between two members (0.0 to 1.0).
+  /// Factors: number of trips together, average rating given to each other,
+  /// directional feedback balance.
+  MemberCompatibility compatibilityScore(String id1, String id2) {
+    final ratings1to2 =
+        experiences.values.where((e) => e.ratedById == id1 && e.ratedId == id2).toList();
+    final ratings2to1 =
+        experiences.values.where((e) => e.ratedById == id2 && e.ratedId == id1).toList();
+
+    final tripsWorked = {...ratings1to2.map((r) => r.tripId), ...ratings2to1.map((r) => r.tripId)}.length;
+
+    if (tripsWorked == 0) {
+      return MemberCompatibility(
+        memberId1: id1,
+        memberId2: id2,
+        score: 0.0,
+        tripsWorkedTogether: 0,
+        averageRating: 0.0,
+      );
+    }
+
+    final allRatings = [...ratings1to2, ...ratings2to1];
+    final avgRating = allRatings.isEmpty
+        ? 0.0
+        : allRatings.fold(0.0, (sum, r) => sum + r.overallRating) / allRatings.length;
+
+    // Score factor: frequency (max 0.6) + quality (max 0.4)
+    // More trips = better, higher ratings = better
+    final frequencyScore = math.min(tripsWorked / 3.0, 1.0) * 0.6;
+    final qualityScore = (avgRating / 5.0) * 0.4;
+    final score = frequencyScore + qualityScore;
+
+    return MemberCompatibility(
+      memberId1: id1,
+      memberId2: id2,
+      score: _round(score),
+      tripsWorkedTogether: tripsWorked,
+      averageRating: _round(avgRating),
+    );
+  }
+
+  /// Recommend members who would be good trip partners for [memberId]
+  /// based on past experience. Returns sorted by compatibility score.
+  List<(Member, MemberCompatibility)> recommendedPartners(String memberId, {int limit = 3}) {
+    final scores = <MemberCompatibility>[];
+    for (final other in members) {
+      if (other.id == memberId) continue;
+      final compat = compatibilityScore(memberId, other.id);
+      if (compat.tripsWorkedTogether > 0) {
+        scores.add(compat);
+      }
+    }
+    scores.sort((a, b) => b.score.compareTo(a.score));
+    return [
+      for (final score in scores.take(limit)) (memberById(score.memberId2), score),
+    ];
+  }
+
+  // ---------------------------------------------------------------------------
   // Deterministic helpers (mirror backend/shared matching code)
   // ---------------------------------------------------------------------------
 
@@ -956,15 +1057,16 @@ class DemoStore extends ChangeNotifier {
 
   void _seed() {
     _seq = 0;
+    // Use canonical cast data from backend/seed/cast.py
     members
       ..clear()
-      ..addAll(const [
-        Member(id: anaId, name: 'Ana Delgado', venmoHandle: 'ana-delgado', tint: MemberTint.blue),
-        Member(id: benId, name: 'Ben Okafor', venmoHandle: 'ben-okafor', tint: MemberTint.green),
-        Member(id: chloeId, name: 'Chloe Marchetti', venmoHandle: 'chloe-marchetti', tint: MemberTint.amber),
-        Member(id: mayaId, name: 'Maya Iyer', venmoHandle: 'maya-iyer', tint: MemberTint.plum),
+      ..addAll([
+        Member(id: ANA_ID, name: ANA_NAME, venmoHandle: ANA_VENMO, tint: MemberTint.blue),
+        Member(id: BEN_ID, name: BEN_NAME, venmoHandle: BEN_VENMO, tint: MemberTint.green),
+        Member(id: CHLOE_ID, name: CHLOE_NAME, venmoHandle: CHLOE_VENMO, tint: MemberTint.amber),
+        Member(id: MAYA_ID, name: MAYA_NAME, venmoHandle: MAYA_VENMO, tint: MemberTint.plum),
       ]);
-    _meId = anaId;
+    _meId = ANA_ID;
     joined = true;
     notificationsOn = true;
     pendingPrompt = null;
@@ -986,48 +1088,48 @@ class DemoStore extends ChangeNotifier {
       ..addAll([
         Trip(
           id: 'trip_tj',
-          shopperId: anaId,
+          shopperId: ANA_ID,
           store: "Trader Joe's",
           departAt: leaves,
           caps: const TripCaps(maxRequesters: 5, maxDollarsPerPerson: 40, maxItemsPerPerson: 8),
           requests: [
-            TripRequest(id: 'req_ben', requesterId: benId, items: [
-              _item(benId, 'Oat milk', maxPrice: 5),
-              _item(benId, 'Dark chocolate', note: '70% or darker', maxPrice: 4),
-              _item(benId, 'Sparkling water', qty: 2, maxPrice: 6),
+            TripRequest(id: 'req_ben', requesterId: BEN_ID, items: [
+              _item(BEN_ID, 'Oat Milk', maxPrice: 3.49),
+              _item(BEN_ID, 'Dark Chocolate Almonds', note: '70% or darker', maxPrice: 3.99),
+              _item(BEN_ID, 'Sparkling Water', qty: 2, maxPrice: 3.49),
             ]),
-            TripRequest(id: 'req_maya', requesterId: mayaId, items: [
-              _item(mayaId, 'Greek yogurt', note: 'plain, full fat', maxPrice: 6),
-              _item(mayaId, 'Frozen dumplings', maxPrice: 5),
-              _item(mayaId, 'Paper towels', maxPrice: 8),
+            TripRequest(id: 'req_maya', requesterId: MAYA_ID, items: [
+              _item(MAYA_ID, 'Greek Yogurt', note: 'plain, full fat', maxPrice: 2.99),
+              _item(MAYA_ID, 'Organic Coffee', maxPrice: 5.99),
+              _item(MAYA_ID, 'Frozen Berries', maxPrice: 4.99),
             ]),
           ],
         ),
         Trip(
           id: 'trip_cvs',
-          shopperId: mayaId,
+          shopperId: MAYA_ID,
           store: 'CVS',
           departAt: at(1, 10, 30),
           caps: const TripCaps(maxRequesters: 4, maxDollarsPerPerson: 25, maxItemsPerPerson: 5),
         ),
         Trip(
           id: 'trip_costco',
-          shopperId: chloeId,
+          shopperId: CHLOE_ID,
           store: 'Costco',
           departAt: at(-sinceSaturday, 9, 0),
           status: TripStatus.done,
           caps: const TripCaps(maxRequesters: 6, maxDollarsPerPerson: 60, maxItemsPerPerson: 10),
           requests: [
-            TripRequest(id: 'req_c_ana', requesterId: anaId, items: [
-              _item(anaId, 'Olive oil', maxPrice: 14, status: ItemStatus.got),
-              _item(anaId, 'Almonds', maxPrice: 12, status: ItemStatus.got),
+            TripRequest(id: 'req_c_ana', requesterId: ANA_ID, items: [
+              _item(ANA_ID, 'Olive Oil', maxPrice: 7.99, status: ItemStatus.got),
+              _item(ANA_ID, 'Almond Flour', maxPrice: 5.99, status: ItemStatus.got),
             ]),
-            TripRequest(id: 'req_c_ben', requesterId: benId, items: [
-              _item(benId, 'Paper towels', maxPrice: 20, status: ItemStatus.got),
-              _item(benId, 'Coffee beans', qty: 2, maxPrice: 24, status: ItemStatus.got),
+            TripRequest(id: 'req_c_ben', requesterId: BEN_ID, items: [
+              _item(BEN_ID, 'Organic Whole Wheat Pasta', maxPrice: 1.99, status: ItemStatus.got),
+              _item(BEN_ID, 'Organic Coffee', qty: 2, maxPrice: 5.99, status: ItemStatus.got),
             ]),
-            TripRequest(id: 'req_c_maya', requesterId: mayaId, items: [
-              _item(mayaId, 'Rotisserie chicken', maxPrice: 6, status: ItemStatus.got),
+            TripRequest(id: 'req_c_maya', requesterId: MAYA_ID, items: [
+              _item(MAYA_ID, 'Chicken Breast', maxPrice: 7.99, status: ItemStatus.got),
             ]),
           ],
         ),
@@ -1036,10 +1138,67 @@ class DemoStore extends ChangeNotifier {
     ledger
       ..clear()
       ..addAll({
-        anaId: const LedgerRow(memberId: anaId, tripsRun: 3, favorsReceived: 1, dollarsCarried: 104.16),
-        benId: const LedgerRow(memberId: benId, tripsRun: 1, favorsReceived: 4, dollarsCarried: 31.40),
-        chloeId: const LedgerRow(memberId: chloeId, tripsRun: 2, favorsReceived: 3, dollarsCarried: 58.75),
-        mayaId: const LedgerRow(memberId: mayaId, tripsRun: 1, favorsReceived: 2, dollarsCarried: 22.10),
+        ANA_ID: LedgerRow(memberId: ANA_ID, tripsRun: 3, favorsReceived: 1, dollarsCarried: 104.16),
+        BEN_ID: LedgerRow(memberId: BEN_ID, tripsRun: 1, favorsReceived: 4, dollarsCarried: 31.40),
+        CHLOE_ID: LedgerRow(memberId: CHLOE_ID, tripsRun: 2, favorsReceived: 3, dollarsCarried: 58.75),
+        MAYA_ID: LedgerRow(memberId: MAYA_ID, tripsRun: 1, favorsReceived: 2, dollarsCarried: 22.10),
+      });
+
+    // Sample experience ratings for the completed Costco trip
+    // Ana rates Ben and Maya
+    experiences
+      ..clear()
+      ..addAll({
+        'trip_costco:$ANA_ID:$BEN_ID': ExperienceRating(
+          id: 'exp_1',
+          tripId: 'trip_costco',
+          ratedById: ANA_ID,
+          ratedId: BEN_ID,
+          overallRating: 5,
+          reliabilityRating: 5,
+          accuracyRating: 5,
+          communicationRating: 4,
+          comment: 'Ben is always reliable. Got everything right.',
+          createdAt: now.subtract(const Duration(days: 5)),
+        ),
+        'trip_costco:$ANA_ID:$MAYA_ID': ExperienceRating(
+          id: 'exp_2',
+          tripId: 'trip_costco',
+          ratedById: ANA_ID,
+          ratedId: MAYA_ID,
+          overallRating: 4,
+          reliabilityRating: 5,
+          accuracyRating: 4,
+          communicationRating: 4,
+          comment: 'Great communicator. One substitution was close.',
+          createdAt: now.subtract(const Duration(days: 5)),
+        ),
+        // Ben rates Ana
+        'trip_costco:$BEN_ID:$ANA_ID': ExperienceRating(
+          id: 'exp_3',
+          tripId: 'trip_costco',
+          ratedById: BEN_ID,
+          ratedId: ANA_ID,
+          overallRating: 5,
+          reliabilityRating: 5,
+          accuracyRating: 5,
+          communicationRating: 5,
+          comment: 'Perfect trip. Ana is the best shopper in the building.',
+          createdAt: now.subtract(const Duration(days: 5)),
+        ),
+        // Maya rates Ana
+        'trip_costco:$MAYA_ID:$ANA_ID': ExperienceRating(
+          id: 'exp_4',
+          tripId: 'trip_costco',
+          ratedById: MAYA_ID,
+          ratedId: ANA_ID,
+          overallRating: 5,
+          reliabilityRating: 5,
+          accuracyRating: 5,
+          communicationRating: 5,
+          comment: 'Amazing. She texted me updates the whole time.',
+          createdAt: now.subtract(const Duration(days: 5)),
+        ),
       });
   }
 }

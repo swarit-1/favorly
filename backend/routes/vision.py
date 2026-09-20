@@ -20,8 +20,24 @@ router = APIRouter(prefix="/vision", tags=["vision"])
 logger = logging.getLogger(__name__)
 
 # Initialize services
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 image_storage = ImageStorageService()
-vision_service = MockVisionService()  # Will replace with real VisionService when API key available
+
+# Use real VisionService if OpenAI API key is available, otherwise fall back to mock
+try:
+    if os.getenv("OPENAI_API_KEY"):
+        vision_service = VisionService(api_key=os.getenv("OPENAI_API_KEY"))
+        logger.info("✅ Real VisionService initialized with OpenAI API")
+    else:
+        logger.warning("⚠️  OPENAI_API_KEY not set, falling back to MockVisionService")
+        vision_service = MockVisionService()
+except Exception as e:
+    logger.warning(f"⚠️  Failed to initialize VisionService: {e}, using MockVisionService")
+    vision_service = MockVisionService()
 
 
 class AnalysisResponse(BaseModel):
@@ -64,11 +80,11 @@ async def scan_pantry(
         return AnalysisResponse(
             analysis_id=str(uuid.uuid4()),
             domain_type="grocery_shopping",
-            detected_items=analysis_result["detected_items"],
-            summary=analysis_result["summary"],
+            detected_items=analysis_result.get("detected_items", []),
+            summary=analysis_result.get("summary", ""),
             image_refs=image_refs,
             analyzed_at=datetime.utcnow().isoformat(),
-            is_placeholder=True,
+            is_placeholder=not isinstance(vision_service, VisionService) or isinstance(vision_service, MockVisionService),
         )
 
     except Exception as e:
@@ -110,11 +126,11 @@ async def analyze_shelf(
         return AnalysisResponse(
             analysis_id=str(uuid.uuid4()),
             domain_type="grocery_shopping",
-            detected_items=analysis_result["alternatives"],
+            detected_items=analysis_result.get("alternatives", []),
             summary=f"Found {len(analysis_result.get('alternatives', []))} alternatives for {original_item}",
             image_refs=[image_ref],
             analyzed_at=datetime.utcnow().isoformat(),
-            is_placeholder=True,
+            is_placeholder=not isinstance(vision_service, VisionService) or isinstance(vision_service, MockVisionService),
         )
 
     except json.JSONDecodeError:

@@ -407,3 +407,69 @@ class LedgerRow {
         dollarsCarried: dollarsCarried ?? this.dollarsCarried,
       );
 }
+
+/// Experience rating left after a trip to track collaboration quality.
+/// Used by the matching algorithm to reconnect people who work well together.
+class ExperienceRating {
+  const ExperienceRating({
+    required this.id,
+    required this.tripId,
+    required this.ratedById,
+    required this.ratedId,
+    required this.overallRating,
+    this.reliabilityRating,
+    this.accuracyRating,
+    this.communicationRating,
+    this.comment,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String tripId;
+  final String ratedById; // Who gave the rating
+  final String ratedId; // Who was rated
+  final int overallRating; // 1-5 scale
+  final int? reliabilityRating; // 1-5: showed up on time, completed requests
+  final int? accuracyRating; // 1-5: got correct items, good substitutions
+  final int? communicationRating; // 1-5: clear instructions, responsive
+  final String? comment;
+  final DateTime createdAt;
+
+  ExperienceRating copyWith({
+    int? overallRating,
+    int? reliabilityRating,
+    int? accuracyRating,
+    int? communicationRating,
+    String? comment,
+  }) =>
+      ExperienceRating(
+        id: id,
+        tripId: tripId,
+        ratedById: ratedById,
+        ratedId: ratedId,
+        overallRating: overallRating ?? this.overallRating,
+        reliabilityRating: reliabilityRating ?? this.reliabilityRating,
+        accuracyRating: accuracyRating ?? this.accuracyRating,
+        communicationRating: communicationRating ?? this.communicationRating,
+        comment: comment ?? this.comment,
+        createdAt: createdAt,
+      );
+}
+
+/// Computed compatibility score between two members based on past experiences.
+/// Used to recommend trip pairings.
+class MemberCompatibility {
+  const MemberCompatibility({
+    required this.memberId1,
+    required this.memberId2,
+    required this.score,
+    required this.tripsWorkedTogether,
+    required this.averageRating,
+  });
+
+  final String memberId1;
+  final String memberId2;
+  final double score; // 0.0 to 1.0
+  final int tripsWorkedTogether;
+  final double averageRating; // 1.0 to 5.0
+}
