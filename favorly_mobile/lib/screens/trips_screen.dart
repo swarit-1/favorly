@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/auth_provider.dart';
+import '../providers/trip_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'post_trip_screen.dart';
 
-class TripsScreen extends StatelessWidget {
+class TripsScreen extends ConsumerStatefulWidget {
   const TripsScreen({super.key});
 
   static String _greeting(DateTime now) {
@@ -14,8 +17,27 @@ class TripsScreen extends StatelessWidget {
   }
 
   @override
+  ConsumerState<TripsScreen> createState() => _TripsScreenState();
+}
+
+class _TripsScreenState extends ConsumerState<TripsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Load trips when screen is mounted
+    Future.microtask(() {
+      final authState = ref.read(authProvider);
+      if (authState.circleId != null) {
+        ref.read(tripsProvider.notifier).fetchTrips(authState.circleId!);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final authState = ref.watch(authProvider);
+    final tripsState = ref.watch(tripsProvider);
 
     return SafeArea(
       child: ListView(
@@ -33,17 +55,23 @@ class TripsScreen extends StatelessWidget {
                 ),
               ),
               IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.notifications_none_rounded),
+                onPressed: () {
+                  // Logout
+                  ref.read(authProvider.notifier).logout();
+                },
+                icon: const Icon(Icons.logout_rounded),
                 color: AppColors.green,
-                tooltip: 'Notifications',
+                tooltip: 'Logout',
               ),
             ],
           ),
           const SizedBox(height: 4),
           const _CirclePill(label: 'Maple St · Building B'),
           const SizedBox(height: 20),
-          Text('${_greeting(DateTime.now())}, Ana', style: text.titleLarge),
+          Text(
+            '${TripsScreen._greeting(DateTime.now())}, ${authState.name ?? "Neighbor"}',
+            style: text.titleLarge,
+          ),
           const SizedBox(height: 4),
           Text(
             "Neighbors help neighbors. That's Favorly.",
@@ -67,14 +95,41 @@ class TripsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          const _ActiveTripCard(),
+          if (tripsState.currentTrip != null)
+            _ActiveTripCard(trip: tripsState.currentTrip!)
+          else
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.cream,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                'No active trip',
+                style: text.bodyMedium,
+              ),
+            ),
           const SizedBox(height: 22),
           const SectionHeader(title: 'Upcoming trips'),
           const SizedBox(height: 10),
-          const _UpcomingTripTile(
-            store: 'CVS',
-            when: 'Tomorrow · 10:30 AM',
-          ),
+          if (tripsState.trips.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'No upcoming trips',
+                style: text.bodyMedium,
+              ),
+            )
+          else
+            ...tripsState.trips
+                .map((trip) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _UpcomingTripTile(
+                        store: trip.store,
+                        when: trip.departAt.toString().split('.')[0],
+                      ),
+                    ))
+                .toList(),
           const SizedBox(height: 24),
           PillButton(
             label: 'Post a trip',
@@ -130,7 +185,9 @@ class _CirclePill extends StatelessWidget {
 }
 
 class _ActiveTripCard extends StatelessWidget {
-  const _ActiveTripCard();
+  const _ActiveTripCard({required this.trip});
+
+  final Trip trip;
 
   @override
   Widget build(BuildContext context) {
@@ -152,10 +209,10 @@ class _ActiveTripCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Trader Joe's", style: text.titleLarge),
+                    Text(trip.store, style: text.titleLarge),
                     const SizedBox(height: 4),
                     Text(
-                      'Today · leaves at 3:00 PM',
+                      'Departs at ${trip.departAt.toString().split('.')[0]}',
                       style: text.bodyMedium,
                     ),
                   ],
@@ -167,13 +224,13 @@ class _ActiveTripCard extends StatelessWidget {
           const SizedBox(height: 16),
           const _TripMetaRow(
             icon: Icons.person_rounded,
-            label: 'Ana is going',
+            label: 'Trip open',
             filled: true,
           ),
           const SizedBox(height: 10),
           const _TripMetaRow(
             icon: Icons.groups_rounded,
-            label: '2 of 5 spots left',
+            label: '6 spots available',
           ),
           const SizedBox(height: 18),
           PillButton(label: 'Add my list', onPressed: () {}),

@@ -1,22 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'screens/login_screen.dart';
 import 'screens/placeholder_screen.dart';
 import 'screens/trips_screen.dart';
 import 'theme.dart';
+import 'providers/auth_provider.dart';
 
 void main() {
-  runApp(const FavorlyApp());
+  runApp(const ProviderScope(child: FavorlyApp()));
 }
 
-class FavorlyApp extends StatelessWidget {
+class FavorlyApp extends ConsumerWidget {
   const FavorlyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+
     return MaterialApp(
       title: 'Favorly',
       theme: buildFavorlyTheme(),
-      home: const RootShell(),
+      home: authState.userId == null ? const LoginScreen() : const RootShell(),
     );
   }
 }
@@ -42,10 +47,10 @@ class _RootShellState extends State<RootShell> {
     return Scaffold(
       body: IndexedStack(
         index: _index,
-        children: const [
-          TripsScreen(),
-          PlaceholderScreen(title: 'Circle', icon: Icons.groups_rounded),
-          PlaceholderScreen(title: 'You', icon: Icons.person_rounded),
+        children: [
+          const TripsScreen(),
+          const PlaceholderScreen(title: 'Circle', icon: Icons.groups_rounded),
+          const PlaceholderScreen(title: 'You', icon: Icons.person_rounded),
         ],
       ),
       bottomNavigationBar: _FavorlyNavBar(
