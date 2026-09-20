@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
+import '../services/api_config.dart';
 import '../theme/tokens.dart';
 import '../widgets/buttons.dart';
+import '../widgets/error_panel.dart';
 import '../widgets/surfaces.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -27,18 +30,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  /// DEV BYPASS: in debug builds an email alone is enough — leave the password
+  /// blank and we sign in as that account without it. Remove with real auth.
+  bool get _isDevBypass => kDebugMode && _password.text.isEmpty;
+
   bool get _canLogin =>
-      _email.text.trim().isNotEmpty && _password.text.isNotEmpty;
+      _email.text.trim().isNotEmpty &&
+      (_password.text.isNotEmpty || _isDevBypass);
 
   Future<void> _login() async {
     if (!_canLogin) return;
 
     setState(() => _isLoading = true);
 
-    await ref.read(authProvider.notifier).login(
-          email: _email.text.trim(),
-          password: _password.text,
-        );
+    final notifier = ref.read(authProvider.notifier);
+    if (_isDevBypass) {
+      await notifier.devLogin(name: _email.text.trim());
+    } else {
+      await notifier.login(
+        email: _email.text.trim(),
+        password: _password.text,
+      );
+    }
 
     if (!mounted) return;
     final authState = ref.read(authProvider);
@@ -101,16 +114,41 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       onPressed: () =>
                           setState(() => _showPassword = !_showPassword),
                     ),
-                    errorText: _error,
                   ),
                   onChanged: (_) => setState(() => _error = null),
                   onSubmitted: (_) => _login(),
                 ),
+                ErrorPanel(_error),
                 const SizedBox(height: 28),
                 FButton(
-                  label: _isLoading ? 'Logging in...' : 'Log in',
+                  label: _isLoading
+                      ? 'Logging in...'
+                      : _isDevBypass
+                          ? 'Log in (dev, no password)'
+                          : 'Log in',
                   onPressed: _canLogin && !_isLoading ? _login : null,
                 ),
+                if (kDebugMode) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Dev: leave the password blank to sign in as that email.',
+                    textAlign: TextAlign.center,
+                    style: FType.caption.copyWith(color: FColors.inkTertiary),
+                  ),
+                  const SizedBox(height: 4),
+                  // Which server this is talking to. A saved override outlives
+                  // rebuilds, so without this "why is it doing that" is a guess.
+                  Text(
+                    ApiConfig.baseUrl +
+                        (ApiConfig.isOverridden ? '  (saved override)' : ''),
+                    textAlign: TextAlign.center,
+                    style: FType.caption.copyWith(
+                      color: ApiConfig.isOverridden
+                          ? FColors.attention
+                          : FColors.inkTertiary,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Center(
                   child: Row(

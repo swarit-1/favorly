@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers/auth_provider.dart';
+import 'services/api_config.dart';
 import 'screens/auth_start_screen.dart';
 import 'screens/shell.dart';
 import 'theme/theme.dart';
 import 'widgets/page.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ApiConfig.load(); // a saved server URL wins over the compiled default
   runApp(const ProviderScope(child: FavorlyApp()));
 }
 

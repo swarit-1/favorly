@@ -96,6 +96,27 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// DEV BYPASS: log in as a name from `users` / `people`, no credentials.
+  Future<void> devLogin({required String name}) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final response = await ApiClient.devLogin(name: name);
+
+      state = state.copyWith(
+        isLoading: false,
+        userId: response['user_id'],
+        circleId: response['circle_id'],
+        name: response['name'],
+        accessToken: response['access_token'],
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+      );
+    }
+  }
+
   void logout() {
     state = AuthState();
   }
