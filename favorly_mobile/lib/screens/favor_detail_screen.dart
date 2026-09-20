@@ -27,6 +27,7 @@ import 'favor_finish_sheet.dart';
 /// about the two of you.
 const _connectionFacts = <String, (IconData, String)>{
   'reciprocity': (CupertinoIcons.arrow_2_squarepath, 'They have helped you before'),
+  'forward': (CupertinoIcons.arrow_turn_up_right, 'You helped someone close to them'),
   'mutual': (CupertinoIcons.person_2, 'You share people in common'),
   'trip': (CupertinoIcons.location, 'You were already headed that way'),
   'fit': (CupertinoIcons.hand_thumbsup, 'It is the kind of thing you do'),

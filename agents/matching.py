@@ -141,7 +141,10 @@ async def load_circle(conn: asyncpg.Connection, person_id: str) -> CircleContext
         "WHERE status = 'claimed' AND claimed_by = ANY($1::uuid[]) "
         "UNION ALL "
         "SELECT shopper_id, 'trip' FROM trips "
-        "WHERE status IN ('open','shopping') AND shopper_id = ANY($1::uuid[])",
+        "WHERE shopper_id = ANY($1::uuid[]) AND (status = 'shopping' OR "
+        # Same bound as recommendations._upcoming_trip: an open trip that left
+        # hours ago is an unclosed row, not someone "already heading out".
+        "  (status = 'open' AND depart_at > now() - interval '2 hours'))",
         ids,
     )
     busy = {str(r["pid"]) for r in status_rows if r["tag"] == "busy" and r["pid"]}
