@@ -5,10 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException
 
 import canonicalization
 import extraction
-import graph_metrics
 import seed_data
 from deps import get_conn
-from models import SeedIn, TickIn
+from models import SeedIn
 
 router = APIRouter(prefix="/admin")
 
@@ -70,12 +69,3 @@ async def admin_reextract(conn: asyncpg.Connection = Depends(get_conn)):
             503, f"replay failed and was rolled back, claims left untouched: {exc}")
 
     return {"events_replayed": len(events), "claims_written": claims_written}
-
-
-@router.post("/tick")
-async def admin_tick(payload: TickIn, conn: asyncpg.Connection = Depends(get_conn)):
-    """Refresh decay-derived topology (give_balance, degree). Useful to call
-    after backdating edges in a demo so the graph reflects current decay."""
-    for _ in range(max(payload.steps, 1)):
-        await graph_metrics.recompute_all(conn)
-    return {"steps": payload.steps}

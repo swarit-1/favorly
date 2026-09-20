@@ -35,24 +35,6 @@ async def write_edge(
     return str(row["id"])
 
 
-async def pair_strength(conn: asyncpg.Connection, a_id: str, b_id: str) -> float:
-    """Decayed sum of edge weight between a pair, either direction, all kinds."""
-    sql = (
-        f"SELECT COALESCE(SUM(weight * {_DECAY_SQL.replace('$__decay__', '$3')}), 0) AS strength "
-        "FROM edges WHERE (src_id = $1 AND dst_id = $2) OR (src_id = $2 AND dst_id = $1)"
-    )
-    row = await conn.fetchrow(sql, a_id, b_id, settings.EDGE_DECAY_SECONDS)
-    return float(row["strength"])
-
-
-async def has_edge(conn: asyncpg.Connection, a_id: str, b_id: str) -> bool:
-    row = await conn.fetchrow(
-        "SELECT 1 FROM edges WHERE (src_id=$1 AND dst_id=$2) OR (src_id=$2 AND dst_id=$1) LIMIT 1",
-        a_id, b_id,
-    )
-    return row is not None
-
-
 async def all_edges_decayed(conn: asyncpg.Connection) -> list[dict]:
     sql = (
         "SELECT src_id, dst_id, kind, "
@@ -64,7 +46,9 @@ async def all_edges_decayed(conn: asyncpg.Connection) -> list[dict]:
 
 
 async def give_balance(conn: asyncpg.Connection, person_id: str) -> float:
-    """Internal reciprocity signal only -- never returned by the API, never rendered."""
+    """Favors given minus received, decayed. Internal only -- never returned by
+    the API, never rendered. Kept because surfacing it would turn helping into
+    a scoreboard; it exists for burnout detection if that gets built."""
     decay = settings.EDGE_DECAY_SECONDS
     given = await conn.fetchrow(
         f"SELECT COALESCE(SUM(weight * {_DECAY_SQL.replace('$__decay__', '$2')}), 0) AS s "
@@ -77,12 +61,3 @@ async def give_balance(conn: asyncpg.Connection, person_id: str) -> float:
         person_id, decay,
     )
     return float(given["s"]) - float(received["s"])
-
-
-async def neighbor_ids(conn: asyncpg.Connection, person_id: str) -> set[str]:
-    rows = await conn.fetch(
-        "SELECT dst_id AS id FROM edges WHERE src_id = $1 "
-        "UNION SELECT src_id AS id FROM edges WHERE dst_id = $1",
-        person_id,
-    )
-    return {str(r["id"]) for r in rows}

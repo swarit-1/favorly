@@ -3,7 +3,10 @@
 Owns the event log, the grocery-favor graph, extraction of grocery-relevant
 signal (dietary/mobility/budget/preference), and reciprocity tracking. It is
 the only thing that writes to this database. Scoped deliberately: no
-introductions/matchmaking -- see agents/README.md.
+introductions/matchmaking.
+
+Algorithm and response contract: docs/AGENT_API_PRD.md
+Config lives in the repo-root .env (python-dotenv walks up to find it).
 """
 
 import logging
