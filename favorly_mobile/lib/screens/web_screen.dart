@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +33,33 @@ class WebScreen extends ConsumerStatefulWidget {
 
 class _WebScreenState extends ConsumerState<WebScreen> {
   GraphNode? _selected;
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    // The "done" moment lands on this screen: the dashed path snapping
+    // solid. Nobody else polls while the web is up, so it keeps its own
+    // gentle 4 s clock while an ask of yours is still moving.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshAsks());
+    _poll = Timer.periodic(const Duration(seconds: 4), (_) {
+      final current = ref.read(asksProvider).current;
+      if (current != null && !current.isFulfilled) _refreshAsks();
+    });
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  void _refreshAsks() {
+    final meId = ref.read(authProvider).userId;
+    if (meId != null) {
+      ref.read(asksProvider.notifier).refresh(meId);
+    }
+  }
 
   /// The social path the current ask is riding, as graph node ids. The
   /// helpers contract writes "me" for the asker; the graph knows the real id.

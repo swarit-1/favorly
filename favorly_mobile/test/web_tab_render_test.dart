@@ -264,4 +264,8 @@ class _SeededAsks extends AsksNotifier {
   _SeededAsks(MyAsk ask) {
     state = AsksState(asks: [ask]);
   }
+
+  /// The web polls; the seed must survive it in any mode, fixtures included.
+  @override
+  Future<void> refresh(String personId) async {}
 }
