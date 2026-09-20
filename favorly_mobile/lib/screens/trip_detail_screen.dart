@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
@@ -10,6 +9,7 @@ import '../util/nav.dart';
 import '../widgets/buttons.dart';
 import '../widgets/page.dart';
 import '../widgets/people.dart';
+import '../widgets/request_panel_enhanced.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/trip_hero.dart';
 import 'add_list_screen.dart';
@@ -17,6 +17,8 @@ import 'handoff_screen.dart';
 import 'settlement_screen.dart';
 import 'shopping_screen.dart';
 import 'substitution_choice_sheet.dart';
+import 'trip_chat_screen.dart';
+import 'map_screen.dart';
 
 /// One trip, seen from whichever side the person is on.
 class TripDetailScreen extends ConsumerWidget {
@@ -42,11 +44,40 @@ class TripDetailScreen extends ConsumerWidget {
       ),
       const SizedBox(height: 14),
       _CapsLine(trip: trip),
-      if (mine) ..._shopperSections(context, store, trip) else ..._requesterSections(context, store, trip, shopper),
+      if (mine)
+        ..._shopperSections(context, store, trip)
+      else
+        ..._requesterSections(context, store, trip, shopper),
     ];
 
     return FavorlyPage(
-      topBar: const FTopBar(title: 'Trip'),
+      topBar: FTopBar(
+        title: 'Trip',
+        trailing: trip.status != TripStatus.done
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () => push(
+                      context,
+                      TripChatScreen(tripId: trip.id),
+                    ),
+                    child: const Icon(CupertinoIcons.bubble_left_fill),
+                  ),
+                  if (trip.status == TripStatus.shopping && mine)
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () => push(
+                        context,
+                        MapScreen(tripId: trip.id, circleId: trip.circleId),
+                      ),
+                      child: const Icon(CupertinoIcons.map_pin),
+                    ),
+                ],
+              )
+            : null,
+      ),
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
       children: children,
       bottom: mine
@@ -57,7 +88,11 @@ class TripDetailScreen extends ConsumerWidget {
 
   // ---------------------------------------------------------------- shopper
 
-  List<Widget> _shopperSections(BuildContext context, DemoStore store, Trip trip) {
+  List<Widget> _shopperSections(
+    BuildContext context,
+    DemoStore store,
+    Trip trip,
+  ) {
     final taking = trip.requests.where((r) => r.taking).toList();
     switch (trip.status) {
       case TripStatus.open:
@@ -74,16 +109,23 @@ class TripDetailScreen extends ConsumerWidget {
             EmptyState(
               icon: CupertinoIcons.doc_text,
               title: 'No lists yet',
-              body: 'Neighbors can add until you leave at ${clock(trip.departAt)}.',
+              body:
+                  'Neighbors can add until you leave at ${clock(trip.departAt)}.',
             )
           else
             for (final r in trip.requests) ...[
-              _RequestPanel(
+              RequestPanelEnhanced(
                 trip: trip,
                 request: r,
                 member: store.memberById(r.requesterId),
                 editable: trip.status == TripStatus.open,
                 onTaking: (v) => store.setTaking(trip.id, r.id, v),
+                compatibilityScore: store
+                    .compatibilityScore(store.meId, r.requesterId)
+                    .score,
+                tripsWorkedTogether: store
+                    .compatibilityScore(store.meId, r.requesterId)
+                    .tripsWorkedTogether,
               ),
               const SizedBox(height: 10),
             ],
@@ -94,11 +136,17 @@ class TripDetailScreen extends ConsumerWidget {
         return [
           if (trip.status == TripStatus.done) ...[
             const SizedBox(height: 16),
-            const Notice('Delivered. The ledger is updated.', kind: NoticeKind.success),
+            const Notice(
+              'Delivered. The ledger is updated.',
+              kind: NoticeKind.success,
+            ),
           ],
           const SectionHeader('Who owes what'),
           if (settlements.isEmpty)
-            const Notice('Nobody owes anything for this trip.', kind: NoticeKind.neutral)
+            const Notice(
+              'Nobody owes anything for this trip.',
+              kind: NoticeKind.neutral,
+            )
           else
             Panel(
               dividerIndent: 68,
@@ -110,8 +158,11 @@ class TripDetailScreen extends ConsumerWidget {
                     subtitle: s.paid ? 'Paid' : 'Waiting for payment',
                     value: money(s.total),
                     trailing: s.paid
-                        ? const Icon(CupertinoIcons.checkmark_circle_fill,
-                            size: 22, color: FColors.success)
+                        ? const Icon(
+                            CupertinoIcons.checkmark_circle_fill,
+                            size: 22,
+                            color: FColors.success,
+                          )
                         : null,
                   ),
               ],
@@ -181,7 +232,9 @@ class TripDetailScreen extends ConsumerWidget {
       ],
       if (trip.status == TripStatus.shopping) ...[
         const SizedBox(height: 16),
-        Notice('${shopper.firstName} is shopping now. You’ll hear if something’s out.'),
+        Notice(
+          '${shopper.firstName} is shopping now. You’ll hear if something’s out.',
+        ),
       ],
       if (trip.status == TripStatus.settling && settlement != null) ...[
         const SizedBox(height: 16),
@@ -195,14 +248,18 @@ class TripDetailScreen extends ConsumerWidget {
       ],
       if (trip.status == TripStatus.done) ...[
         const SizedBox(height: 16),
-        const Notice('Delivered. Thanks for using the trip.', kind: NoticeKind.success),
+        const Notice(
+          'Delivered. Thanks for using the trip.',
+          kind: NoticeKind.success,
+        ),
       ],
       if (myRequest == null && trip.status == TripStatus.open) ...[
         const SizedBox(height: 24),
         EmptyState(
           icon: CupertinoIcons.doc_text,
           title: 'Add your list',
-          body: 'Type it, say it, or snap a photo. '
+          body:
+              'Type it, say it, or snap a photo. '
               '${shopper.firstName} ${leavesLabel(trip.departAt).toLowerCase()}.',
         ),
       ] else if (myRequest != null) ...[
@@ -213,7 +270,8 @@ class TripDetailScreen extends ConsumerWidget {
         ),
         Panel(
           children: [
-            for (final item in myRequest.items) _MyItemRow(item: item, trip: trip),
+            for (final item in myRequest.items)
+              _MyItemRow(item: item, trip: trip),
           ],
         ),
         const SizedBox(height: 10),
@@ -247,7 +305,9 @@ class TripDetailScreen extends ConsumerWidget {
         onPressed: () => push(context, AddListScreen(tripId: trip.id)),
       );
     }
-    if (trip.status != TripStatus.open && settlement != null && !settlement.paid) {
+    if (trip.status != TripStatus.open &&
+        settlement != null &&
+        !settlement.paid) {
       return FButton(
         label: 'Pay ${money(settlement.total)}',
         onPressed: () => push(context, SettlementScreen(tripId: trip.id)),
@@ -274,7 +334,11 @@ class _CapsLine extends StatelessWidget {
     final caps = trip.caps;
     return Row(
       children: [
-        const Icon(CupertinoIcons.person_2, size: 15, color: FColors.inkSecondary),
+        const Icon(
+          CupertinoIcons.person_2,
+          size: 15,
+          color: FColors.inkSecondary,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -285,62 +349,6 @@ class _CapsLine extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _RequestPanel extends StatelessWidget {
-  const _RequestPanel({
-    required this.trip,
-    required this.request,
-    required this.member,
-    required this.editable,
-    required this.onTaking,
-  });
-
-  final Trip trip;
-  final TripRequest request;
-  final Member member;
-  final bool editable;
-  final ValueChanged<bool> onTaking;
-
-  @override
-  Widget build(BuildContext context) {
-    final muted = !request.taking;
-    return Opacity(
-      opacity: muted ? 0.6 : 1,
-      child: Panel(
-        dividerIndent: 16,
-        children: [
-          PanelRow(
-            leading: Avatar(member, size: 40),
-            title: member.name,
-            subtitle: muted
-                ? 'Not taking this one'
-                : '${plural(request.items.length, 'item')} · up to ${moneyShort(request.cappedTotal)}',
-            trailing: editable
-                ? Semantics(
-                    label: 'Taking ${member.firstName}’s list',
-                    child: Switch.adaptive(
-                      value: request.taking,
-                      activeTrackColor: FColors.blue,
-                      onChanged: onTaking,
-                    ),
-                  )
-                : null,
-          ),
-          for (final item in request.items)
-            PanelRow(
-              minHeight: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              title: item.qty > 1 ? '${item.name} · ${item.qtyLabel}' : item.name,
-              titleStyle: FType.bodySmall,
-              subtitle: item.note,
-              subtitleStyle: FType.caption.copyWith(color: FColors.inkSecondary),
-              value: item.maxPrice == null ? null : moneyShort(item.maxPrice!),
-            ),
-        ],
-      ),
     );
   }
 }
@@ -367,7 +375,9 @@ class _MyItemRow extends StatelessWidget {
       title: item.qty > 1 ? '${item.name} · ${item.qtyLabel}' : item.name,
       subtitle: subtitle,
       value: item.maxPrice == null ? null : moneyShort(item.maxPrice!),
-      trailing: showStatus && statusLabel != null ? StatusPill(statusLabel, kind: kind) : null,
+      trailing: showStatus && statusLabel != null
+          ? StatusPill(statusLabel, kind: kind)
+          : null,
     );
   }
 }

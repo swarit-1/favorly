@@ -17,7 +17,7 @@ class ApiConfig {
   /// runtime from the Server field on the dev login screen.
   static const String compiledDefault = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://favorly-swart.vercel.app',
+    defaultValue: 'http://localhost:8000',
   );
 
   /// The agent + graph service (recommendations, needs, favor reviews). It is

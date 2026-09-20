@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
+import '../providers/vision_provider.dart';
 import '../state/demo_store.dart';
 import '../theme/tokens.dart';
 import '../util/format.dart';
@@ -11,6 +12,7 @@ import '../widgets/buttons.dart';
 import '../widgets/capture.dart';
 import '../widgets/page.dart';
 import '../widgets/voice_sheet.dart';
+import 'camera_screen.dart';
 import 'review_list_screen.dart';
 
 /// Three equal ways in, one review screen out.
@@ -28,6 +30,15 @@ class _AddListScreenState extends ConsumerState<AddListScreen> {
   final _text = TextEditingController();
   String? _transcript;
   bool _captured = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize vision session for camera mode
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(visionSessionProvider.notifier).reset();
+    });
+  }
 
   @override
   void dispose() {
@@ -59,16 +70,52 @@ class _AddListScreenState extends ConsumerState<AddListScreen> {
     setState(() => _transcript = transcript);
   }
 
+  void _launchCamera() {
+    push(
+      context,
+      CameraScreen(
+        title: 'Snap your list',
+        domainType: 'grocery_shopping',
+        maxPhotos: 4,
+        minPhotos: 1,
+      ),
+    );
+  }
+
   void _continue() {
     if (_source == IntakeSource.photo && !_captured) {
-      setState(() => _captured = true);
+      _launchCamera();
       return;
     }
-    final drafts = ref.read(storeProvider).drafts(_source, text: _text.text);
+
+    late List<ItemDraft> drafts;
+
+    if (_source == IntakeSource.photo) {
+      // Parse all detected items from vision result — opt-out model
+      final lastAnalysis = ref.read(visionSessionProvider).lastAnalysis;
+      drafts = _parsedDetectedItems(lastAnalysis);
+    } else {
+      drafts = ref.read(storeProvider).drafts(_source, text: _text.text);
+    }
+
     push(
       context,
       ReviewListScreen(tripId: widget.tripId, drafts: drafts, source: _source),
     );
+  }
+
+  List<ItemDraft> _parsedDetectedItems(VisionAnalysisResult? analysis) {
+    if (analysis == null) return [];
+    final raw = analysis.result['detected_items'];
+    if (raw is! List) return [];
+    final drafts = <ItemDraft>[];
+    for (final item in raw) {
+      if (item is! Map<String, dynamic>) continue;
+      final name = item['name'] as String?;
+      if (name == null || name.trim().isEmpty) continue;
+      drafts.add(ItemDraft(name: name.trim()));
+    }
+    return drafts;
   }
 
   @override
@@ -77,6 +124,14 @@ class _AddListScreenState extends ConsumerState<AddListScreen> {
     final trip = store.tripById(widget.tripId);
     final shopper = store.memberById(trip.shopperId);
     final caps = trip.caps;
+
+    // Watch vision session to detect when photos are captured
+    final visionSession = ref.watch(visionSessionProvider);
+    if (_source == IntakeSource.photo && visionSession.capturedPhotos.isNotEmpty && !_captured) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _captured = true);
+      });
+    }
 
     return FavorlyPage(
       topBar: FTopBar(title: trip.store),
@@ -110,7 +165,11 @@ class _AddListScreenState extends ConsumerState<AddListScreen> {
           IntakeSource.voice => _VoicePane(transcript: _transcript, onListen: _listen),
           IntakeSource.photo => _PhotoPane(
               captured: _captured,
-              onRetake: () => setState(() => _captured = false),
+              onCapture: _launchCamera,
+              onRetake: () {
+                setState(() => _captured = false);
+                ref.read(visionSessionProvider.notifier).reset();
+              },
             ),
         },
       ],
@@ -233,35 +292,90 @@ class _VoicePane extends StatelessWidget {
   }
 }
 
-class _PhotoPane extends StatelessWidget {
-  const _PhotoPane({required this.captured, required this.onRetake});
+class _PhotoPane extends ConsumerWidget {
+  const _PhotoPane({
+    required this.captured,
+    required this.onCapture,
+    required this.onRetake,
+  });
 
   final bool captured;
+  final VoidCallback onCapture;
   final VoidCallback onRetake;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Viewfinder(
-          hint: captured ? 'Sharp enough to read' : 'Fit the whole list in frame',
-          background: const Color(0xFF6E4E33),
-          child: const PaperNote(lines: DemoStore.handwrittenLines),
-        ),
-        if (captured) ...[
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              const Icon(CupertinoIcons.checkmark_circle_fill, size: 16, color: FColors.success),
-              const SizedBox(width: 6),
-              Text('Photo taken', style: FType.captionStrong.copyWith(color: FColors.success)),
-              const Spacer(),
-              FTextButton('Retake', onPressed: onRetake),
-            ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    final visionSession = ref.watch(visionSessionProvider);
+    final photoCount = visionSession.capturedPhotos.length;
+
+    if (captured && photoCount > 0) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: FColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: FColors.success),
+            ),
+            child: Row(
+              children: [
+                const Icon(CupertinoIcons.checkmark_circle_fill, size: 24, color: FColors.success),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Photos captured', style: FType.bodyStrong.copyWith(color: FColors.success)),
+                      Text(
+                        '$photoCount photo${photoCount > 1 ? 's' : ''} ready for analysis',
+                        style: FType.caption.copyWith(color: FColors.inkSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FTextButton('Retake', icon: CupertinoIcons.camera, onPressed: onRetake),
           ),
         ],
-      ],
+      );
+    }
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: FColors.surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(CupertinoIcons.camera, size: 36, color: FColors.ink),
+          ),
+          const SizedBox(height: 16),
+          Text('Snap your list', style: FType.bodyStrong),
+          const SizedBox(height: 4),
+          Text(
+            'We\'ll analyze the photo to extract items',
+            style: FType.caption.copyWith(color: FColors.inkSecondary),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          FButton(
+            label: 'Take a photo',
+            icon: CupertinoIcons.camera_fill,
+            onPressed: onCapture,
+          ),
+        ],
+      ),
     );
   }
 }

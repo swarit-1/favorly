@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'providers/auth_provider.dart';
 import 'services/api_config.dart';
@@ -12,6 +13,15 @@ import 'widgets/page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiConfig.load(); // a saved server URL wins over the compiled default
+
+  // Initialize Supabase for RLS-authenticated queries and Realtime subscriptions
+  await Supabase.initialize(
+    url: const String.fromEnvironment('SUPABASE_URL',
+        defaultValue: 'https://lkvtmyvqytvsmfbauepa.supabase.co'),
+    publishableKey: const String.fromEnvironment('SUPABASE_ANON_KEY',
+        defaultValue: 'sb_publishable_HhkmMsj8S3eEe_cM9-LhBw_T7wKeSTv'),
+  );
+
   runApp(const ProviderScope(child: FavorlyApp()));
 }
 

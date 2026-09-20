@@ -2,12 +2,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
 import '../state/demo_store.dart';
 import '../theme/tokens.dart';
 import 'circle_screen.dart';
+import 'neighborhood_map_screen.dart';
 import 'substitution_choice_sheet.dart';
 import 'trips_screen.dart';
-import 'web_screen.dart';
 import 'you_screen.dart';
 
 class RootShell extends ConsumerStatefulWidget {
@@ -26,9 +28,9 @@ class _RootShellState extends ConsumerState<RootShell> {
     _TabSpec('Trips', CupertinoIcons.house, CupertinoIcons.house_fill),
     _TabSpec('Circle', CupertinoIcons.person_2, CupertinoIcons.person_2_fill),
     _TabSpec(
-      'Web',
-      CupertinoIcons.circle_grid_hex,
-      CupertinoIcons.circle_grid_hex_fill,
+      'Map',
+      CupertinoIcons.map,
+      CupertinoIcons.map_fill,
     ),
     _TabSpec(
       'You',
@@ -40,13 +42,21 @@ class _RootShellState extends ConsumerState<RootShell> {
   @override
   Widget build(BuildContext context) {
     final index = ref.watch(tabProvider);
+
+    // Load notifications when user is authenticated
+    ref.listen<AuthState>(authProvider, (_, auth) {
+      if (auth.accessToken != null) {
+        ref.read(notificationProvider.notifier).load(auth.accessToken!);
+      }
+    });
+
     // Realtime stand-in: when a substitution prompt lands for the person
     // holding this phone, the chooser slides up wherever they are.
     ref.listen<DemoStore>(storeProvider, (_, store) => _maybeShowPrompt(store));
     return Scaffold(
       body: IndexedStack(
         index: index,
-        children: const [TripsScreen(), CircleScreen(), WebScreen(), YouScreen()],
+        children: const [TripsScreen(), CircleScreen(), NeighborhoodMapScreen(), YouScreen()],
       ),
       bottomNavigationBar: _TabBar(
         index: index,

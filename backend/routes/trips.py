@@ -6,22 +6,13 @@ from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
-import os
-from supabase import create_client, Client
 
+from db.client import get_supabase_client
 from shared.contracts.models import Trip, TripCaps, TripStatus, Item, Request as RequestModel, User
 from shared.timestamps import parse_timestamp
+from shared.notify import write_notification
 
 router = APIRouter(prefix="/trips", tags=["trips"])
-
-
-def get_supabase_client() -> Client:
-    """Get Supabase client."""
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
-    return create_client(url, key)
 
 
 class CreateTripRequest(BaseModel):
@@ -142,6 +133,13 @@ async def update_trip_status(trip_id: UUID, req: UpdateTripStatusRequest):
     supabase = get_supabase_client()
 
     try:
+        # Get the trip first to get circle_id
+        trip_response = supabase.table("trips").select("*").eq("id", str(trip_id)).execute()
+        if not trip_response.data:
+            raise HTTPException(status_code=404, detail="Trip not found")
+
+        trip_data_before = trip_response.data[0]
+
         # Update status
         update_response = supabase.table("trips").update({
             "status": req.status.value,
@@ -151,6 +149,30 @@ async def update_trip_status(trip_id: UUID, req: UpdateTripStatusRequest):
             raise HTTPException(status_code=404, detail="Trip not found")
 
         trip_data = update_response.data[0]
+
+        # Fan-out notifications on status change to "shopping"
+        if req.status == TripStatus.SHOPPING:
+            circle_id = trip_data["circle_id"]
+            shopper_id = trip_data["shopper_id"]
+            store = trip_data["store"]
+
+            # Get all requesters (users with pending/accepted requests in this trip)
+            requests_response = supabase.table("requests").select(
+                "requester_id"
+            ).eq("trip_id", str(trip_id)).in_("status", ["pending", "accepted"]).execute()
+
+            for request_data in requests_response.data or []:
+                requester_id = request_data["requester_id"]
+                if requester_id != shopper_id:  # Don't notify yourself
+                    write_notification(
+                        supabase,
+                        UUID(requester_id),
+                        trip_id,
+                        "trip_departed",
+                        title=f"Shopping trip to {store} started",
+                        body="Your shopper is heading to the store now",
+                    )
+
         return Trip(
             id=trip_data["id"],
             shopper_id=trip_data["shopper_id"],

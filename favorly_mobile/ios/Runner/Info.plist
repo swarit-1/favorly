@@ -31,6 +31,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>We need camera access to capture photos of your list for analysis.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need your location to show you on the map during shopping trips so your neighbors can see where you are.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Favorly connects to the development API server running on your Mac.</string>
 	<key>UIApplicationSceneManifest</key>

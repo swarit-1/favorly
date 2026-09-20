@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -22,6 +24,22 @@ class Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (bg, fg) = onAccent ? (FColors.canvas, FColors.blue) : colorsFor(member.tint);
+
+    // If member has a photo, show it
+    if (member.photoPath != null && member.photoPath!.isNotEmpty) {
+      return Semantics(
+        label: member.name,
+        excludeSemantics: true,
+        child: CircleAvatar(
+          radius: size / 2,
+          backgroundImage: member.photoPath!.startsWith('http')
+              ? NetworkImage(member.photoPath!)
+              : FileImage(File(member.photoPath!)),
+        ),
+      );
+    }
+
+    // Fall back to initials
     return Semantics(
       label: member.name,
       excludeSemantics: true,

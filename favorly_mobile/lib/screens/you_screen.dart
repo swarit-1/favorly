@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
+import '../screens/profile_setup_screen.dart';
 import '../state/demo_store.dart';
 import '../theme/tokens.dart';
 import '../widgets/buttons.dart';
@@ -36,21 +37,65 @@ class YouScreen extends ConsumerWidget {
     return FavorlyPage(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
       children: [
-        Row(
+        Center(
+          child: Column(
+            children: [
+              Avatar(me, size: 80),
+              const SizedBox(height: 12),
+              Text(displayName, style: FType.heading),
+              const SizedBox(height: 2),
+              Text(
+                displayCircle,
+                style: FType.bodySmall.copyWith(color: FColors.inkSecondary),
+              ),
+              if (me.bio != null && me.bio!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  me.bio!,
+                  textAlign: TextAlign.center,
+                  style: FType.bodySmall,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 12),
+              FTextButton(
+                'Edit profile',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const SectionHeader('Profile'),
+        Panel(
           children: [
-            Avatar(me, size: 60),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(displayName, style: FType.heading),
-                  const SizedBox(height: 2),
-                  Text(
-                    displayCircle,
-                    style: FType.bodySmall.copyWith(color: FColors.inkSecondary),
-                  ),
-                ],
+            PanelRow(
+              leading: const LeadingIcon(CupertinoIcons.map),
+              title: 'Address',
+              subtitle: me.address?.unit != null
+                  ? '${me.address!.unit}${me.address!.floor != null ? ", Floor ${me.address!.floor}" : ""}'
+                  : 'Not set',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
+              ),
+            ),
+            PanelRow(
+              leading: const LeadingIcon(CupertinoIcons.leaf_arrow_circlepath),
+              title: 'Dietary preferences',
+              subtitle: me.dietary.isEmpty ? 'None' : '${me.dietary.length} selected',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
+              ),
+            ),
+            PanelRow(
+              leading: const LeadingIcon(CupertinoIcons.briefcase),
+              title: 'Role',
+              subtitle: me.role.name[0].toUpperCase() + me.role.name.substring(1),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
               ),
             ),
           ],

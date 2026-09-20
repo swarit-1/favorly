@@ -277,6 +277,42 @@ class ApiClient {
     }
   }
 
+  static Future<Map<String, dynamic>> updateProfile({
+    required String userId,
+    required String accessToken,
+    String? bio,
+    String? photoUrl,
+    String? role,
+    Map<String, String?>? address,
+    List<String>? dietary,
+    List<String>? preferredStores,
+    List<String>? availability,
+  }) async {
+    final body = <String, dynamic>{};
+    if (bio != null) body['bio'] = bio;
+    if (photoUrl != null) body['photo_url'] = photoUrl;
+    if (role != null) body['role'] = role;
+    if (address != null) body['address'] = address;
+    if (dietary != null) body['dietary'] = dietary;
+    if (preferredStores != null) body['preferred_stores'] = preferredStores;
+    if (availability != null) body['availability'] = availability;
+
+    final response = await http.patch(
+      Uri.parse('$apiBaseUrl/users/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode(body),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Update profile failed: ${response.body}');
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> getCircleMembers(
     String circleId,
   ) async {
@@ -289,6 +325,344 @@ class ApiClient {
       return List<Map<String, dynamic>>.from(jsonDecode(response.body));
     } else {
       throw Exception('Get circle members failed: ${response.body}');
+    }
+  }
+
+  // --- EXPERIENCE RATINGS ---
+
+  static Future<Map<String, dynamic>> submitExperienceRating({
+    required String tripId,
+    required String circleId,
+    required String ratedById,
+    required String ratedId,
+    required int overallRating,
+    int? reliabilityRating,
+    int? accuracyRating,
+    int? communicationRating,
+    String? comment,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/experiences'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'trip_id': tripId,
+        'circle_id': circleId,
+        'rated_by_id': ratedById,
+        'rated_id': ratedId,
+        'overall_rating': overallRating,
+        'reliability_rating': reliabilityRating,
+        'accuracy_rating': accuracyRating,
+        'communication_rating': communicationRating,
+        'comment': comment,
+      }),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Submit experience rating failed: ${response.body}');
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getExperiences({
+    String? ratedId,
+    String? ratedById,
+    String? tripId,
+  }) async {
+    final params = <String, String>{};
+    if (ratedId != null) params['rated_id'] = ratedId;
+    if (ratedById != null) params['rated_by_id'] = ratedById;
+    if (tripId != null) params['trip_id'] = tripId;
+
+    final uri = Uri.parse('$apiBaseUrl/experiences')
+        .replace(queryParameters: params.isNotEmpty ? params : null);
+
+    final response = await http.get(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+    } else {
+      throw Exception('Get experiences failed: ${response.body}');
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getMemberRecommendations({
+    required String memberId,
+    required String circleId,
+    int limit = 3,
+  }) async {
+    final response = await http.get(
+      Uri.parse(
+        '$apiBaseUrl/experiences/members/$memberId/recommendations?circle_id=$circleId&limit=$limit',
+      ),
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+    } else {
+      throw Exception('Get member recommendations failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> refreshCompatibilityCache({
+    String? circleId,
+  }) async {
+    final body = circleId != null ? jsonEncode({'circle_id': circleId}) : null;
+
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/experiences/refresh-compatibility'),
+      headers: {'Content-Type': 'application/json'},
+      body: body,
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Refresh compatibility cache failed: ${response.body}');
+    }
+  }
+
+  // --- MESSAGES (Live Chat) ---
+
+  static Future<Map<String, dynamic>> postMessage({
+    required String tripId,
+    required String body,
+    required String accessToken,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/messages/$tripId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode({'body': body}),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Post message failed: ${response.body}');
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getMessages({
+    required String tripId,
+    int limit = 50,
+    String? before,
+  }) async {
+    final params = <String, String>{'limit': limit.toString()};
+    if (before != null) params['before'] = before;
+
+    final uri = Uri.parse('$apiBaseUrl/messages/$tripId')
+        .replace(queryParameters: params);
+
+    final response = await http.get(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+    } else {
+      throw Exception('Get messages failed: ${response.body}');
+    }
+  }
+
+  // --- NOTIFICATIONS ---
+
+  static Future<List<Map<String, dynamic>>> getNotifications({
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/notifications'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+    } else {
+      throw Exception('Get notifications failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> markNotificationRead({
+    required String notificationId,
+    required String accessToken,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$apiBaseUrl/notifications/$notificationId/read'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Mark notification read failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> markAllNotificationsRead({
+    required String accessToken,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$apiBaseUrl/notifications/read-all'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Mark all notifications read failed: ${response.body}');
+    }
+  }
+
+  // --- SAVINGS METER ---
+
+  static Future<Map<String, dynamic>> getSavings({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/savings/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Get savings') as Map<String, dynamic>;
+    } else {
+      throw Exception('Get savings failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getInsuranceStatus({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/insurance/status/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Get insurance status') as Map<String, dynamic>;
+    } else {
+      throw Exception('Get insurance status failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> checkInsuranceEligible({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/insurance/check-eligible/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Check insurance eligible') as Map<String, dynamic>;
+    } else {
+      throw Exception('Check insurance eligible failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getUnlockStatus({
+    required String circleId,
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/unlocks/status/$circleId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Get unlock status') as Map<String, dynamic>;
+    } else {
+      throw Exception('Get unlock status failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> claimUnlock({
+    required String circleId,
+    required String unlockType,
+    required String accessToken,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/unlocks/claim/$circleId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode({'unlock_type': unlockType}),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Claim unlock') as Map<String, dynamic>;
+    } else {
+      throw Exception('Claim unlock failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getReferralStats({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/referrals/stats/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Get referral stats') as Map<String, dynamic>;
+    } else {
+      throw Exception('Get referral stats failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> checkNewReferralRewards({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/referrals/check-earned/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Check referral rewards') as Map<String, dynamic>;
+    } else {
+      throw Exception('Check referral rewards failed: ${response.body}');
     }
   }
 }
