@@ -10,6 +10,7 @@ import '../services/trellis_client.dart';
 import '../theme/tokens.dart';
 import '../widgets/buttons.dart';
 import '../widgets/error_panel.dart';
+import '../widgets/favor_card.dart';
 import '../widgets/page.dart';
 import '../widgets/people.dart';
 import '../widgets/surfaces.dart';
@@ -25,6 +26,7 @@ class MatchesScreen extends ConsumerStatefulWidget {
     required this.title,
     this.whenText = '',
     this.initialHelpers,
+    this.initialNearby,
   });
 
   final String needId;
@@ -35,14 +37,19 @@ class MatchesScreen extends ConsumerStatefulWidget {
   /// screen draws people immediately instead of a spinner.
   final List<HelperMatch>? initialHelpers;
 
+  /// Nearby favor requests (recommendations) to show in "You could also help" section.
+  final List<FavorSuggestion>? initialNearby;
+
   @override
   ConsumerState<MatchesScreen> createState() => _MatchesScreenState();
 }
 
 class _MatchesScreenState extends ConsumerState<MatchesScreen> {
   List<HelperMatch> _helpers = const [];
+  List<FavorSuggestion> _nearby = const [];
   Timer? _poll;
   bool _busy = false;
+  bool _nearbyBusy = false;
   bool _broadcasted = false;
   String? _error;
 
@@ -50,8 +57,10 @@ class _MatchesScreenState extends ConsumerState<MatchesScreen> {
   void initState() {
     super.initState();
     _helpers = widget.initialHelpers ?? const [];
+    _nearby = widget.initialNearby ?? const [];
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_helpers.isEmpty) _refresh();
+      if (_nearby.isEmpty) _loadNearby();
       _syncPolling();
     });
   }
@@ -106,6 +115,35 @@ class _MatchesScreenState extends ConsumerState<MatchesScreen> {
       _poll?.cancel();
       _poll = null;
     }
+  }
+
+  Future<void> _loadNearby() async {
+    final userId = ref.read(authProvider).userId;
+    if (userId == null) return;
+    setState(() => _nearbyBusy = true);
+    try {
+      final recs = await TrellisClient.recommendations(userId, limit: 3);
+      if (!mounted) return;
+      setState(() {
+        _nearby = recs;
+        _nearbyBusy = false;
+      });
+    } on Object catch (_) {
+      if (!mounted) return;
+      setState(() => _nearbyBusy = false);
+    }
+  }
+
+  String? _nudgeText(HelperMatch helper) {
+    if (helper.tie == 'close' || helper.hops <= 1) return null;
+    final mutuals = helper.why['mutual_names'];
+    if (mutuals is List && mutuals.isNotEmpty) {
+      return 'You both know ${mutuals.first} — a word from them makes the ask land better.';
+    }
+    if (helper.tie == 'friend_of_friend') {
+      return 'One hop apart. ${helper.firstName} will recognize your name.';
+    }
+    return 'A new connection — introduce yourself briefly with your ask.';
   }
 
   Future<void> _invite(HelperMatch helper) async {
@@ -209,6 +247,7 @@ class _MatchesScreenState extends ConsumerState<MatchesScreen> {
                   canInvite:
                       pending == null && accepted == null && !_busy,
                   onInvite: () => _invite(helper),
+                  nudge: _nudgeText(helper),
                 ),
             ],
           ),
@@ -221,6 +260,25 @@ class _MatchesScreenState extends ConsumerState<MatchesScreen> {
               onPressed: _busy || _broadcasted ? null : _broadcast,
             ),
           ),
+        ],
+        if (_nearbyBusy || _nearby.isNotEmpty) ...[
+          const SizedBox(height: FSpace.lg),
+          const SectionHeader(
+            'You could also help',
+            padding: EdgeInsets.only(top: 0, bottom: FSpace.sm),
+          ),
+          if (_nearbyBusy)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CupertinoActivityIndicator()),
+            )
+          else
+            Panel(
+              children: [
+                for (final f in _nearby)
+                  FavorCard(favor: f, waiting: false),
+              ],
+            ),
         ],
       ],
     );
@@ -236,6 +294,7 @@ class _PersonMatchCard extends StatelessWidget {
     required this.busy,
     required this.canInvite,
     required this.onInvite,
+    this.nudge,
   });
 
   final HelperMatch helper;
@@ -243,6 +302,7 @@ class _PersonMatchCard extends StatelessWidget {
   final bool busy;
   final bool canInvite;
   final VoidCallback onInvite;
+  final String? nudge;
 
   @override
   Widget build(BuildContext context) {
@@ -310,6 +370,34 @@ class _PersonMatchCard extends StatelessWidget {
                       helper.reason,
                       style:
                           FType.caption.copyWith(color: FColors.inkTertiary),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (nudge != null) ...[
+              const SizedBox(height: 4),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Icon(
+                      CupertinoIcons.person_2,
+                      size: 12,
+                      color: dimmed
+                          ? FColors.inkTertiary
+                          : FColors.inkSecondary,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      nudge!,
+                      style: FType.caption.copyWith(
+                        color: FColors.inkTertiary,
+                      ),
+                      maxLines: 2,
                     ),
                   ),
                 ],

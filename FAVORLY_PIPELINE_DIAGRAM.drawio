@@ -1,0 +1,283 @@
+<mxfile host="drawio" modified="2026-09-20T00:00:00Z" agent="Claude Code" version="1.0" type="device">
+  <diagram id="favorly-pipeline" name="Favorly v2 Pipeline">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Favorly v2: Any Favor, The Right Neighbor - Full Pipeline" style="text;html=1;fontSize=20;fontStyle=1;align=center;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="50" y="10" width="1300" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER 1: INPUT SURFACES -->
+        <mxCell id="l1-title" value="INPUT SURFACES" style="text;html=1;fontSize=14;fontStyle=1;align=left;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="50" width="1300" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- iMessage/SMS Input -->
+        <mxCell id="input-sms" value="iMessage/SMS&#10;(Linq API)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#b3e5fc;strokeColor=#0277bd;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="70" y="80" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Flutter Mobile App Input -->
+        <mxCell id="input-app" value="Flutter App&#10;(Mobile)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#b3e5fc;strokeColor=#0277bd;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="250" y="80" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER 2: BACKEND PROCESSING -->
+        <mxCell id="l2-title" value="BACKEND API LAYER (Port 8000 - FastAPI)" style="text;html=1;fontSize=14;fontStyle=1;align=left;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="160" width="1300" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Webhook Receiver -->
+        <mxCell id="webhook" value="POST /webhooks/linq&#10;(Linq Webhook)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="70" y="195" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- NLU / Intent Parser -->
+        <mxCell id="nlu" value="NLU Parser&#10;(backend/agent/nlu.py)&#10;Rule-based or Claude&#10;Intent: ask_favor | offer_help" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="250" y="195" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Favor Flow Handler -->
+        <mxCell id="favor-flow" value="Favor Flow Handler&#10;(backend/agent/favor_flow.py)&#10;Route to existing handlers&#10;or new Trellis intake" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#fff3e0;strokeColor=#e65100;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="430" y="195" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Supabase (Auth + Trips) -->
+        <mxCell id="supabase" value="Supabase&#10;(Postgres + Auth)&#10;users, trips, requests&#10;items, receipts" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#ffe0b2;strokeColor=#ff6f00;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="610" y="195" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Vision Service -->
+        <mxCell id="vision-service" value="Vision Service&#10;(backend/routes/vision.py)&#10;Muse -&gt; OpenAI -&gt; Mock&#10;Pantry, Receipt, Damage" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#f0f4c3;strokeColor=#9ccc65;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="790" y="195" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Trellis Client -->
+        <mxCell id="trellis-client" value="Trellis Client&#10;(services/trellis_client.py)&#10;Mirror events, sync state" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#f0f4c3;strokeColor=#9ccc65;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="970" y="195" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER 3: TRELLIS SERVICE -->
+        <mxCell id="l3-title" value="TRELLIS SERVICE LAYER (Port 8010 - FastAPI + Graph DB)" style="text;html=1;fontSize=14;fontStyle=1;align=left;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="275" width="1300" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Intake Endpoint -->
+        <mxCell id="intake" value="POST /needs/intake&#10;Parse + Scope Check&#10;(agents/llm.py)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#ffccbc;strokeColor=#d84315;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="70" y="310" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Event Extraction -->
+        <mxCell id="extraction" value="Event Extraction&#10;(agents/extraction.py)&#10;LLM or Mock Path&#10;Claims: has_item, skill, etc" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#ffccbc;strokeColor=#d84315;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="250" y="310" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Embedding Service -->
+        <mxCell id="embeddings" value="Embedding Service&#10;(agents/embeddings.py)&#10;OpenAI-compatible&#10;Vector similarity" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#ffccbc;strokeColor=#d84315;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="430" y="310" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Graph Database -->
+        <mxCell id="graph-db" value="Graph Database&#10;(Postgres + pgvector)&#10;users, claims, edges&#10;needs, invites" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#b3e5fc;strokeColor=#0277bd;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="610" y="310" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Matching Module -->
+        <mxCell id="matching" value="Matching Module&#10;(agents/matching.py)&#10;7 Signals: capability, tie&#10;similarity, reciprocity, etc" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="790" y="310" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Phrase Helpers (LLM) -->
+        <mxCell id="phrase" value="Phrase Helpers&#10;(agents/llm.phrase_helpers)&#10;OpenAI-compatible LLM&#10;Reason + Spark text" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#ffccbc;strokeColor=#d84315;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="970" y="310" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER 4: RESPONSE ASSEMBLY -->
+        <mxCell id="l4-title" value="RESPONSE ASSEMBLY & DELIVERY" style="text;html=1;fontSize=14;fontStyle=1;align=left;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="390" width="1300" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- State Query -->
+        <mxCell id="state" value="GET /people/{id}/state&#10;Derive conversation state&#10;from database" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#f8bbd0;strokeColor=#c2185b;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="70" y="425" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Reply Builder -->
+        <mxCell id="reply-builder" value="Reply Builder&#10;(favor_flow.py)&#10;ACK + MATCHES&#10;Template messages" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#f8bbd0;strokeColor=#c2185b;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="250" y="425" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Notifications -->
+        <mxCell id="notifications" value="Notification Queue&#10;(Notification model)&#10;SMS, In-app, Webhooks" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#f8bbd0;strokeColor=#c2185b;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="430" y="425" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Linq Outbound -->
+        <mxCell id="linq-out" value="Linq API&#10;Send SMS Replies&#10;(linq_client.py)" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="610" y="425" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- App Polling -->
+        <mxCell id="app-polling" value="App Polling&#10;myAsks endpoint&#10;4s refresh" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="790" y="425" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER 5: FULFILLMENT & GRAPH -->
+        <mxCell id="l5-title" value="FULFILLMENT & GRAPH UPDATES" style="text;html=1;fontSize=14;fontStyle=1;align=left;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="505" width="1300" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Invite Endpoint -->
+        <mxCell id="invite" value="POST /needs/{id}/invite&#10;Helper accepts/declines&#10;Sets need.claimed_by" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#ffccbc;strokeColor=#d84315;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="70" y="540" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Fulfill Endpoint -->
+        <mxCell id="fulfill" value="POST /needs/{id}/fulfill&#10;Mark complete, create&#10;favor edge, compute stats" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#ffccbc;strokeColor=#d84315;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="250" y="540" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Edge Creation -->
+        <mxCell id="edges" value="Edge Creation&#10;(agents/edges.py)&#10;favor, knows, neighbor&#10;Decay function" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#b3e5fc;strokeColor=#0277bd;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="430" y="540" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Graph Metrics -->
+        <mxCell id="metrics" value="Graph Metrics&#10;(agents/graph_metrics.py)&#10;avg_separation, triangles&#10;NetworkX algorithms" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#b3e5fc;strokeColor=#0277bd;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="610" y="540" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Recommendations -->
+        <mxCell id="recommendations" value="Recommendations&#10;(agents/recommendations.py)&#10;Helper-side: what should I do?&#10;6 signals: trip, reciprocity, etc" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#c8e6c9;strokeColor=#388e3c;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="790" y="540" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- LAYER 6: OUTPUTS -->
+        <mxCell id="l6-title" value="CLIENT OUTPUTS" style="text;html=1;fontSize=14;fontStyle=1;align=left;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="50" y="620" width="1300" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- SMS Output -->
+        <mxCell id="output-sms" value="SMS Timeline&#10;ACK -&gt; MATCHES&#10;WAIT -&gt; ACCEPT/DONE" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="70" y="655" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- App UI -->
+        <mxCell id="output-app" value="App UI Updates&#10;Home, Ask, Matches,&#10;Detail screens" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="250" y="655" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Graph Visualization -->
+        <mxCell id="output-graph" value="Graph Visualization&#10;Circle, paths, stats&#10;Dashed -&gt; solid edges" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#e8f5e9;strokeColor=#2e7d32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="430" y="655" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ARROWS / FLOW -->
+        <!-- Input to Webhook -->
+        <mxCell id="arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="input-sms" target="webhook">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Webhook to NLU -->
+        <mxCell id="arrow2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="webhook" target="nlu">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- NLU to Favor Flow -->
+        <mxCell id="arrow3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="nlu" target="favor-flow">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Favor Flow to Intake -->
+        <mxCell id="arrow4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="favor-flow" target="intake">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Intake to Extraction -->
+        <mxCell id="arrow5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="intake" target="extraction">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Extraction to Graph DB -->
+        <mxCell id="arrow6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="extraction" target="graph-db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Graph DB to Matching -->
+        <mxCell id="arrow7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="graph-db" target="matching">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Matching to Phrase -->
+        <mxCell id="arrow8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="matching" target="phrase">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Phrase to Reply Builder -->
+        <mxCell id="arrow9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="phrase" target="reply-builder">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Reply Builder to Notifications -->
+        <mxCell id="arrow10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="reply-builder" target="notifications">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Notifications to Linq Out -->
+        <mxCell id="arrow11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="notifications" target="linq-out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Notifications to App -->
+        <mxCell id="arrow12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="notifications" target="app-polling">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Invite to Fulfill -->
+        <mxCell id="arrow13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="invite" target="fulfill">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Fulfill to Edges -->
+        <mxCell id="arrow14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="fulfill" target="edges">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Edges to Metrics -->
+        <mxCell id="arrow15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="edges" target="metrics">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Metrics to Recommendations -->
+        <mxCell id="arrow16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666;" edge="1" parent="1" source="metrics" target="recommendations">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- LEGEND -->
+        <mxCell id="legend-title" value="LEGEND & NOTES" style="text;html=1;fontSize=12;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="50" y="740" width="400" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend-1" value="🔵 Vision/Image: Uses Muse API (Meta) with fallback to OpenAI then Mock" style="text;html=1;fontSize=9;align=left;" vertex="1" parent="1">
+          <mxGeometry x="50" y="760" width="600" height="15" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend-2" value="🔵 LLM (Text): Uses OpenAI-compatible endpoint (Claude, GPT, etc) for intent parsing & phrase helpers" style="text;html=1;fontSize=9;align=left;" vertex="1" parent="1">
+          <mxGeometry x="50" y="775" width="600" height="15" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend-3" value="🔵 Matching Algorithm: NO LLM in core path - uses 7 deterministic signals + NetworkX graph algorithms" style="text;html=1;fontSize=9;align=left;" vertex="1" parent="1">
+          <mxGeometry x="50" y="790" width="600" height="15" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend-4" value="🔵 Performance: Intake <4s, Helpers <6s, Full loop within SMS latency budget (2s ack + 6s match)" style="text;html=1;fontSize=9;align=left;" vertex="1" parent="1">
+          <mxGeometry x="700" y="760" width="600" height="30" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

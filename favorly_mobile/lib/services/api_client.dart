@@ -187,6 +187,24 @@ class ApiClient {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getTripSuggestions(
+    String tripId, {
+    int limit = 5,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/trips/$tripId/suggestions?limit=$limit'),
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      final body = jsonDecode(response.body);
+      return body is List
+          ? List<Map<String, dynamic>>.from(body.whereType<Map>())
+          : const [];
+    }
+    throw Exception('Trip suggestions failed: ${response.body}');
+  }
+
   static Future<Map<String, dynamic>> createRequest({
     required String tripId,
     required List<Map<String, dynamic>> items,
