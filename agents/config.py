@@ -34,6 +34,15 @@ class Settings:
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
     LLM_BASE_URL: str = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    # Muse Spark is a reasoning model. Empty string disables the parameter
+    # for providers that do not support it.
+    REASONING_EFFORT: str = os.getenv("REASONING_EFFORT", "")
+    # Embeddings are a separate provider from the chat model: Muse Spark has
+    # no embeddings endpoint, and EMBEDDING_DIM is pinned by VECTOR(1536)
+    # in schema.sql. Defaults fall back to the LLM_* values so existing
+    # single-provider setups keep working unchanged.
+    EMBEDDING_BASE_URL: str = os.getenv("EMBEDDING_BASE_URL") or os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
+    EMBEDDING_API_KEY: str = os.getenv("EMBEDDING_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY", "")
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
     EMBEDDING_DIM: int = int(os.getenv("EMBEDDING_DIM", 1536))
 

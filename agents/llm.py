@@ -23,14 +23,34 @@ def _get_client():
 
 
 def _chat_json(system: str, user: str, timeout: float | None = None) -> dict:
+    """One JSON completion.
+
+    Muse Spark is a reasoning model: without a cap it spends 500+ tokens
+    thinking before it answers, which put parse_favor at ~13 s against a 4 s
+    budget. REASONING_EFFORT trims that. Providers that do not know the
+    parameter (OpenAI chat models) reject it, so we retry once without it
+    rather than hard-failing on an unknown kwarg.
+    """
     client = _get_client()
-    resp = client.chat.completions.create(
+    kwargs = dict(
         model=settings.LLM_MODEL,
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         response_format={"type": "json_object"},
         temperature=0.3,
         timeout=timeout,
     )
+    if settings.REASONING_EFFORT:
+        try:
+            resp = client.chat.completions.create(
+                **kwargs, reasoning_effort=settings.REASONING_EFFORT
+            )
+            return json.loads(resp.choices[0].message.content)
+        except TypeError:
+            pass  # SDK/provider does not accept the kwarg
+        except Exception as exc:  # provider rejected the value
+            if "reasoning_effort" not in str(exc):
+                raise
+    resp = client.chat.completions.create(**kwargs)
     return json.loads(resp.choices[0].message.content)
 
 
