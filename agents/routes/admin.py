@@ -40,6 +40,21 @@ async def admin_reset(conn: asyncpg.Connection = Depends(get_conn)):
     return {"status": "reset"}
 
 
+@router.post("/demo/reset")
+async def admin_demo_reset(conn: asyncpg.Connection = Depends(get_conn)):
+    """One button before going on stage: reseed the block (which truncates
+    graph tables including need_invites and any presenter needs), so every
+    run starts from the same building. scripts/demo_reset.sh calls this."""
+    try:
+        result = await seed_data.seed(conn, "block")
+    except seed_data.MissingIdentities as e:
+        raise HTTPException(409, str(e))
+    return {"status": "reset", "scenario": "block",
+            "people": len(result.get("person_ids", {})),
+            "needs_posted": result.get("needs_posted"),
+            "claims_extracted": result.get("claims_extracted")}
+
+
 @router.post("/reextract")
 async def admin_reextract(conn: asyncpg.Connection = Depends(get_conn)):
     """Drop every claim and replay extraction over the existing event log.

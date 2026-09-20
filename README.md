@@ -148,3 +148,7 @@ The agent tests exercise the full text→parse→match→reply loop offline (no 
 - **`docs/LINQ_AGENT.md`** — iMessage agent setup + conversation reference
 - **`START_HERE.md` / `SETUP_SUPABASE.md` / `QUICKSTART_FULL.md`** — environment setup walkthroughs
 - **`docs/UX_UI_DIRECTION.md` / `docs/STYLE_GUIDE.md`** — design system (mobile)
+
+## v2: any favor, the right neighbor
+
+Text Favorly anything neighbor-sized ("I need to borrow a ladder for an hour today") and it answers twice: an ack echoing what it understood, then three neighbors who fit, each with a true, human reason (someone you know, a friend of a friend, a new face) and one spark you share. Reply 1, 2 or 3 and Favorly runs the whole loop over SMS: a no-pressure YES/NO to the helper, unit numbers only after both said yes, DONE closes the favor and writes the edge that makes the building's graph a little smaller. Oversized asks get right-sized instead of refused; risky ones get pointed at a pro. The brain lives in `agents/` (`POST /needs/intake`, `GET /needs/{id}/helpers`, `GET /people/{id}/state`), the texting plumbing in `backend/agent/favor_flow.py`, and everything works offline with `MOCK_LLM=1`. Demo: `scripts/demo_reset.sh`, then follow `docs/DEMO_SCRIPT.md`.

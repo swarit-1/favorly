@@ -31,6 +31,23 @@ from services import trellis_client as trellis
 router = APIRouter(tags=["linq-agent"])
 
 
+@router.post("/webhooks/linq/reset")
+async def linq_agent_reset():
+    """Dev-only: clear the one allowed piece of in-memory conversation state
+    (remembered right_sized rewrites) plus in-memory asks/trips, so a demo
+    reset starts truly clean. Everything else is database-derived."""
+    import os
+
+    if os.getenv("ENVIRONMENT", "development") != "development":
+        return {"status": "ignored"}
+    store.pending_action.clear()
+    store.asks.clear()
+    store.trips.clear()
+    store.requests.clear()
+    store.events.clear()
+    return {"status": "reset"}
+
+
 @router.post("/webhooks/linq")
 async def linq_webhook(request: Request, background: BackgroundTasks):
     payload = await request.json()
