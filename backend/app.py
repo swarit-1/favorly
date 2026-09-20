@@ -95,8 +95,16 @@ async def health_check():
 
 
 # ============================================================================
-# STUB ROUTES (will be implemented in routes/ modules)
+# ROUTES
 # ============================================================================
+
+from routes import auth, trips, requests, users, merged_list
+
+app.include_router(auth.router)
+app.include_router(trips.router)
+app.include_router(requests.router)
+app.include_router(users.router)
+app.include_router(merged_list.router)
 
 @app.post("/trips", tags=["trips"])
 async def create_trip(trip: dict):

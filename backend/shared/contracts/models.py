@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID, uuid4
 from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl
+from pydantic import BaseModel, Field, field_validator, model_validator, HttpUrl, ConfigDict, field_serializer
 from pydantic_settings import BaseSettings
 
 
@@ -63,7 +63,6 @@ class SubstitutionDecision(str, Enum):
     TIMEOUT_SKIP = "timeout_skip"
 
 
-# Store section order for aisle sorting
 STORE_SECTION_ORDER = [
     StoreSection.PRODUCE,
     StoreSection.BAKERY,
@@ -82,13 +81,8 @@ STORE_SECTION_ORDER = [
 # DOMAIN ENTITIES
 # ============================================================================
 
-def condecimal(ge: float = 0, decimal_places: int = 2):
-    """Helper for Decimal fields: quantized to cents, non-negative."""
-    return Decimal(f"0.{'0' * decimal_places}")
-
-
 class User(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     circle_id: UUID
@@ -98,24 +92,24 @@ class User(BaseModel):
 
 
 class Circle(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     name: str
-    invite_code: str = Field(min_length=6, max_length=6)  # "ABC123"
+    invite_code: str = Field(min_length=6, max_length=6)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class TripCaps(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     max_requesters: int = Field(default=6, ge=1)
-    max_dollars_per_person: Decimal = Field(default=Decimal("40.00"), ge=0, decimal_places=2)
+    max_dollars_per_person: float = Field(default=40.00, ge=0)
     max_items_per_person: int = Field(default=8, ge=1)
 
 
 class Trip(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     shopper_id: UUID
@@ -128,25 +122,25 @@ class Trip(BaseModel):
 
 
 class Item(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     request_id: UUID
     trip_id: UUID
     name: str
     qty: int = Field(default=1, ge=1)
-    unit: Optional[str] = None  # "lb", "pack", "bunch"
-    note: Optional[str] = None  # "ripe", "unsalted", brand hints
-    max_price: Optional[Decimal] = Field(default=None, decimal_places=2)
+    unit: Optional[str] = None
+    note: Optional[str] = None
+    max_price: Optional[float] = None
     section: StoreSection = StoreSection.OTHER
     status: ItemStatus = ItemStatus.PENDING
-    substitute_of: Optional[UUID] = None  # set on replacement item
-    actual_price: Optional[Decimal] = Field(default=None, decimal_places=2)  # from receipt split
+    substitute_of: Optional[UUID] = None
+    actual_price: Optional[float] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Request(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     trip_id: UUID
@@ -157,64 +151,64 @@ class Request(BaseModel):
 
 
 class Parse(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     user_id: UUID
     source: ParseSource
-    raw_ref: str  # text body, or storage path for photo/audio
-    transcript: Optional[str] = None  # voice only
-    parsed: Optional[dict] = None  # ParsedList (stored as dict in MongoDB)
+    raw_ref: str
+    transcript: Optional[str] = None
+    parsed: Optional[dict] = None
     confirmed: bool = False
-    confirmed_items: Optional[List[dict]] = None  # ItemDraft list (stored as dict)
+    confirmed_items: Optional[List[dict]] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Receipt(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     trip_id: UUID
     image_ref: str
-    split: Optional[dict] = None  # ReceiptSplit (stored as dict)
-    assignments: Optional[List[dict]] = None  # LineAssignment list
+    split: Optional[dict] = None
+    assignments: Optional[List[dict]] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Settlement(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     trip_id: UUID
     requester_id: UUID
-    lines: List[dict] = Field(default_factory=list)  # SettlementLine list
-    subtotal: Decimal = Field(decimal_places=2)
-    tax_share: Decimal = Field(decimal_places=2)
-    total: Decimal = Field(decimal_places=2)
-    venmo_link: Optional[str] = None  # HttpUrl serialized as string
+    lines: List[dict] = Field(default_factory=list)
+    subtotal: float
+    tax_share: float
+    total: float
+    venmo_link: Optional[str] = None
     marked_paid: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class LedgerEvent(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     circle_id: UUID
     user_id: UUID
     type: LedgerEventType
-    value: Decimal = Field(decimal_places=2)
+    value: float
     trip_id: Optional[UUID] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class LedgerRow(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     user: User
     trips_run: int
     favors_received: int
-    dollars_carried: Decimal = Field(decimal_places=2)
+    dollars_carried: float
 
 
 # ============================================================================
@@ -222,20 +216,20 @@ class LedgerRow(BaseModel):
 # ============================================================================
 
 class ItemDraft(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str = Field(min_length=1, max_length=80)
     qty: int = Field(default=1, ge=1)
     unit: Optional[str] = None
-    note: Optional[str] = None  # "ripe", "unsalted", brand hints
-    max_price: Optional[Decimal] = Field(default=None, decimal_places=2)
+    note: Optional[str] = None
+    max_price: Optional[float] = None
     confidence: float = Field(ge=0, le=1)
-    needs_confirmation: bool  # True if confidence < 0.7 or qty/name ambiguous
-    raw_span: Optional[str] = None  # text/handwriting fragment
+    needs_confirmation: bool
+    raw_span: Optional[str] = None
 
 
 class ParsedList(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     source: ParseSource
     items: List[ItemDraft] = Field(max_length=30)
@@ -244,18 +238,18 @@ class ParsedList(BaseModel):
 
 
 class ShelfCandidate(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str
     brand: Optional[str] = None
-    size: Optional[str] = None  # "16 oz"
-    price: Optional[Decimal] = Field(default=None, decimal_places=2)
+    size: Optional[str] = None
+    price: Optional[float] = None
     confidence: float = Field(ge=0, le=1)
     reason: str = Field(max_length=120)
 
 
 class ShelfCandidates(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     item_id: UUID
     original_item_name: str
@@ -264,34 +258,33 @@ class ShelfCandidates(BaseModel):
 
 
 class ReceiptLine(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     line_no: int
-    description: str  # as printed, e.g. "ORG BANANAS 2.31 LB"
-    normalized_name: str  # model's best guess, e.g. "organic bananas"
-    qty: Decimal = Field(default=Decimal(1))
-    unit_price: Optional[Decimal] = Field(default=None, decimal_places=2)
-    line_total: Decimal = Field(decimal_places=2)
+    description: str
+    normalized_name: str
+    qty: float = Field(default=1.0)
+    unit_price: Optional[float] = None
+    line_total: float
     confidence: float = Field(ge=0, le=1)
 
 
 class ReceiptSplit(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     store: Optional[str] = None
     purchased_at: Optional[datetime] = None
     lines: List[ReceiptLine]
-    subtotal: Decimal = Field(decimal_places=2)
-    tax: Decimal = Field(decimal_places=2)
-    total: Decimal = Field(decimal_places=2)
+    subtotal: float
+    tax: float
+    total: float
 
     @model_validator(mode="after")
     def totals_reconcile(self):
-        """PRD §10: split must reconcile to the receipt."""
         lines_sum = sum(line.line_total for line in self.lines)
-        if abs(lines_sum - self.subtotal) > Decimal("0.05"):
+        if abs(lines_sum - self.subtotal) > 0.05:
             raise ValueError(f"lines sum ({lines_sum}) != subtotal ({self.subtotal})")
-        if abs(self.subtotal + self.tax - self.total) > Decimal("0.02"):
+        if abs(self.subtotal + self.tax - self.total) > 0.02:
             raise ValueError(f"subtotal+tax ({self.subtotal + self.tax}) != total ({self.total})")
         return self
 
@@ -301,10 +294,10 @@ class ReceiptSplit(BaseModel):
 # ============================================================================
 
 class LineAssignment(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     line_no: int
-    item_id: Optional[UUID] = None  # None = shopper's own / unassigned
+    item_id: Optional[UUID] = None
     requester_id: Optional[UUID] = None
     score: float = Field(ge=0, le=1)
     ambiguous: bool = False
@@ -312,33 +305,33 @@ class LineAssignment(BaseModel):
 
 
 class SettlementLine(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     item_id: UUID
     description: str
-    amount: Decimal = Field(decimal_places=2)
+    amount: float
 
 
 class MergedListRow(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     item: Item
     requester: User
-    running_total: Decimal = Field(decimal_places=2)
-    cap: Decimal = Field(decimal_places=2)
+    running_total: float
+    cap: float
     over_cap: bool = False
 
 
 class MergedList(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     trip_id: UUID
     sections: dict[StoreSection, List[MergedListRow]] = Field(default_factory=dict)
-    totals_by_requester: dict[UUID, Decimal] = Field(default_factory=dict)
+    totals_by_requester: dict[UUID, float] = Field(default_factory=dict)
 
 
 class SubstitutionPrompt(BaseModel):
-    model_config = dict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: UUID = Field(default_factory=uuid4)
     item_id: UUID

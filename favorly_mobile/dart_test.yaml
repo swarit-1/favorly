@@ -1,0 +1,6 @@
+# Golden screenshots are rendered with the bundled fonts on macOS. They are
+# skipped by default so `flutter test` stays fast and platform-independent.
+# Regenerate with:  flutter test --run-skipped -t golden --update-goldens
+tags:
+  golden:
+    skip: "Golden screenshots; run with --run-skipped -t golden"
