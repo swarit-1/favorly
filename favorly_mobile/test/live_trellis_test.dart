@@ -1,8 +1,9 @@
 // Exercises the real agent service through the app's own client. Skipped by
-// default; needs the service running locally:
+// default because it hits the network:
 //
-//   cd agents && .venv/bin/uvicorn app:app --port 8041
 //   flutter test test/live_trellis_test.dart --run-skipped
+//
+// Runs against the deployed service; point TRELLIS at a local one to debug.
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -18,7 +19,7 @@ void main() {
     () {
       setUpAll(() async {
         TestWidgetsFlutterBinding.ensureInitialized();
-        await ApiConfig.setTrellis('http://127.0.0.1:8041');
+        await ApiConfig.setTrellis(ApiConfig.trellisCompiledDefault);
       });
 
       test('recommendations parse into FavorSuggestion', () async {

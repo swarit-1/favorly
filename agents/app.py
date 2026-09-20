@@ -29,17 +29,32 @@ logger = logging.getLogger("trellis")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Trellis agent + graph service (MOCK_LLM=%s)", settings.MOCK_LLM)
+    logger.info(
+        "Starting Trellis agent + graph service (MOCK_LLM=%s, serverless=%s)",
+        settings.MOCK_LLM, settings.SERVERLESS,
+    )
     await db.init_pool()
-    await db.apply_schema()
+
+    # Applying the schema is a startup job, not a per-request one. On a
+    # persistent host it runs once; on serverless it would run on every cold
+    # start, so it is skipped and left to a deploy step.
+    if not settings.SERVERLESS:
+        await db.apply_schema()
+
     async with db.pool().acquire() as conn:
         await canonicalization.seed_vocabulary(conn)
-    worker.start_workers()
+
+    # No background tasks on serverless -- worker.enqueue_event extracts inline
+    # instead. See worker.py.
+    if not settings.SERVERLESS:
+        worker.start_workers()
+
     logger.info("Trellis ready.")
 
     yield
 
-    worker.stop_workers()
+    if not settings.SERVERLESS:
+        worker.stop_workers()
     await db.close_pool()
     logger.info("Trellis shut down.")
 

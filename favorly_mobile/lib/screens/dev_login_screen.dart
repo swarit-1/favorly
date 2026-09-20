@@ -164,7 +164,7 @@ class _DevLoginScreenState extends ConsumerState<DevLoginScreen> {
                   autocorrect: false,
                   textInputAction: TextInputAction.done,
                   decoration: InputDecoration(
-                    hintText: 'http://10.0.0.196:8010',
+                    hintText: 'https://favorly-agents.vercel.app',
                     helperText: 'Recommendations and favors. Separate service.',
                     helperStyle:
                         FType.caption.copyWith(color: FColors.inkTertiary),

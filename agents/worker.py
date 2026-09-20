@@ -8,6 +8,7 @@ import logging
 import db
 import extraction
 import sse
+from config import settings
 
 logger = logging.getLogger("trellis.worker")
 
@@ -17,7 +18,32 @@ _tasks: list[asyncio.Task] = []
 
 
 async def enqueue_event(event_id: str, person_id: str, body: str):
+    """Hand extraction to the background worker, or just do it.
+
+    Serverless has no background: the invocation freezes the moment the
+    response is sent, so a queued item would sit there until the instance is
+    recycled and the claim would never be written. Inline costs the caller an
+    LLM round-trip; silently losing the extraction costs the graph.
+    """
+    if settings.SERVERLESS or not _tasks:
+        await _extract_now(event_id, person_id, body)
+        return
     await extraction_queue.put((event_id, person_id, body))
+
+
+async def _extract_now(event_id: str, person_id: str, body: str):
+    try:
+        async with db.pool().acquire() as conn:
+            claim_ids = await extraction.process_event(conn, event_id, person_id, body)
+        await sse.publish("extraction_complete", {
+            "event_id": event_id, "person_id": person_id, "claim_count": len(claim_ids),
+        })
+        if claim_ids:
+            await sse.publish("claim_extracted", {
+                "event_id": event_id, "person_id": person_id, "claim_ids": claim_ids,
+            })
+    except Exception:
+        logger.exception("inline extraction failed for event %s", event_id)
 
 
 async def _extraction_worker():

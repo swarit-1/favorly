@@ -25,7 +25,7 @@ class ApiConfig {
   /// — background worker, connection pool, SSE.
   static const String trellisCompiledDefault = String.fromEnvironment(
     'TRELLIS_BASE_URL',
-    defaultValue: 'http://localhost:8010',
+    defaultValue: 'https://favorly-agents.vercel.app',
   );
 
   static String _baseUrl = compiledDefault;
