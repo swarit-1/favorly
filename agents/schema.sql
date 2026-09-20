@@ -111,13 +111,26 @@ CREATE INDEX IF NOT EXISTS favor_reviews_need_idx ON favor_reviews (need_id);
 -- `app_people` rather than `people` so nothing can mistake it for a table this
 -- service owns: it is a view, and the rows behind it belong to Supabase Auth
 -- and the backend. `display_name` keeps the column name the graph queries used.
+-- v2 appended unit/floor/availability/bio at the END (columns may only be
+-- appended, or CREATE OR REPLACE VIEW fails). The users ALTERs live in the
+-- v2 block at the bottom of this file; they run before this on a fresh
+-- database only if... they don't. So they are duplicated here, first.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS address_unit TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS address_floor TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS availability JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
+
 CREATE OR REPLACE VIEW app_people AS
 SELECT u.id,
        u.name        AS display_name,
        a.email       AS email,
        u.circle_id   AS circle_id,
        u.venmo_handle,
-       a.created_at  AS joined_at
+       a.created_at  AS joined_at,
+       u.address_unit,
+       u.address_floor,
+       u.availability,
+       u.bio
 FROM public.users u
 JOIN auth.users a ON a.id = u.id;
 -- Grocery trips offered via the SMS agent (mirrors the errand-coordination
@@ -131,3 +144,45 @@ CREATE TABLE IF NOT EXISTS trips (
   status      TEXT NOT NULL DEFAULT 'open',   -- open | shopping | done
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ============================================================================
+-- v2: any favor in (mirrors migrations/001_any_favor.sql -- change both
+-- together). Additive only; the shared database must never lose a row.
+-- ============================================================================
+
+-- PRD-DEVIATION: public.users lacked these profile columns; added additively
+-- so the v2 app_people view (unit, floor, availability, bio) can exist.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS address_unit TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS address_floor TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS address_buzzer TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS address_notes TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS availability JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
+
+ALTER TABLE needs ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'errand';
+ALTER TABLE needs ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE needs ADD COLUMN IF NOT EXISTS requires JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE needs ADD COLUMN IF NOT EXISTS when_text TEXT;
+ALTER TABLE needs ADD COLUMN IF NOT EXISTS duration_minutes INT;
+ALTER TABLE needs ADD COLUMN IF NOT EXISTS shortlist JSONB NOT NULL DEFAULT '[]';
+
+CREATE TABLE IF NOT EXISTS need_invites (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  need_id      UUID NOT NULL REFERENCES needs(id),
+  helper_id    UUID NOT NULL REFERENCES users(id),
+  status       TEXT NOT NULL DEFAULT 'pending',   -- pending | accepted | declined | expired
+  rank         INT,
+  reason       TEXT,
+  spark        TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  responded_at TIMESTAMPTZ,
+  UNIQUE (need_id, helper_id)
+);
+CREATE INDEX IF NOT EXISTS need_invites_helper_idx ON need_invites (helper_id, status);
+
+-- Append columns at the END only, or CREATE OR REPLACE VIEW fails.
+CREATE OR REPLACE VIEW app_people AS
+SELECT u.id, u.name AS display_name, a.email AS email, u.circle_id, u.venmo_handle,
+       a.created_at AS joined_at,
+       u.address_unit, u.address_floor, u.availability, u.bio
+FROM public.users u JOIN auth.users a ON a.id = u.id;

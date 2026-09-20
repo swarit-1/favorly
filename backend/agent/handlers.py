@@ -20,12 +20,14 @@ from .store import AgentStore, FavorAsk, Profile
 Notification = tuple[str, str]  # (phone, text)
 
 HELP_TEXT = (
-    "Hey, I'm the Favorly agent for your circle. You can text me things like:\n"
-    "• \"Can someone grab me oat milk and eggs?\" — ask a favor\n"
-    "• \"I'm going to Trader Joe's at 3\" — offer a run\n"
-    "• \"What should I pick up?\" — favors matched to you\n"
-    "• \"Status\" — open runs and your asks\n"
-    "• \"Call me Sam\" — set your name"
+    "Hey, I'm the Favorly agent for your building. You can text me things like:\n"
+    "• \"Can someone grab me oat milk and eggs?\" · ask a favor\n"
+    "• \"I need to borrow a ladder for an hour today\" · borrow something\n"
+    "• \"Anyone want to walk the reservoir around 6?\" · find company\n"
+    "• \"I'm going to Trader Joe's at 3\" · offer a run\n"
+    "• \"What should I pick up?\" · favors matched to you\n"
+    "• \"Status\" · open runs and your asks\n"
+    "• \"Call me Sam\" · set your name"
 )
 
 

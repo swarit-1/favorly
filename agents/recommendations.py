@@ -253,7 +253,7 @@ def _build_reason(needer_name: str, parts: dict, detail: dict) -> str:
     if parts["reciprocity"] > 0:
         n = detail["favor_count"]
         fragments.append(
-            f"{first_name} picked up groceries for you {n} time{'s' if n != 1 else ''} recently"
+            f"{first_name} helped you out {n} time{'s' if n != 1 else ''} recently"
         )
     if parts["mutual"] > 0:
         fragments.append(f"you both know {', '.join(detail['mutual_names'][:2])}")
@@ -307,8 +307,11 @@ def validate_reason(text: str, allowed_text: str) -> bool:
 async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 10) -> list[dict]:
     """Rank open needs posted by other people for this helper."""
     needs = await conn.fetch(
-        "SELECT n.id, n.person_id, n.body, n.created_at, p.display_name "
+        "SELECT n.id, n.person_id, n.body, n.created_at, p.display_name, "
+        "n.category, n.title, n.when_text, n.requires, "
+        "i.status AS invite_status "
         "FROM needs n JOIN app_people p ON p.id = n.person_id "
+        "LEFT JOIN need_invites i ON i.need_id = n.id AND i.helper_id = $1 "
         "WHERE n.status = 'open' AND n.person_id <> $1 "
         "ORDER BY n.created_at DESC LIMIT 200",
         helper_id,
@@ -358,13 +361,23 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
             "needer_id": needer_id,
             "ask": detail["ask"],
             "posted": detail["age"],
+            "category": need["category"] or "errand",
+            "title": need["title"],
+            "when_text": need["when_text"],
+            "invited": need["invite_status"] == "pending",
             "score": round(score, 4),
             "signals": {k: round(v, 4) for k, v in parts.items()},
             "detail": detail,
             "template_reason": _build_reason(need["display_name"], parts, detail),
         })
 
-    out.sort(key=lambda r: r["score"], reverse=True)
+    # A pending invite means the asker picked this helper by name: it adds a
+    # flat bonus and always sorts first.
+    for c in out:
+        if c["invited"]:
+            c["score"] = round(c["score"] + 0.5, 4)
+            c["detail"]["invite_reason"] = f"{c['needer_name'].split()[0]} asked for you."
+    out.sort(key=lambda r: (not r["invited"], -r["score"]))
     return out[:limit]
 
 
@@ -375,7 +388,7 @@ def _reciprocity_fact(needer_name: str, favor_count: int) -> str | None:
         return None
     first = needer_name.split()[0]
     times = "once" if favor_count == 1 else f"{favor_count} times"
-    return f"{first} picked up groceries for you {times} recently"
+    return f"{first} helped you out {times} recently"
 
 
 # The app's copy has no dashes in it. The prompt says so, but a model that
@@ -428,6 +441,9 @@ def _as_suggestion(c: dict, *, title: str, action: str, reason: str, effort: str
         "signals": c["signals"],
         "why": _why(c),
         "posted": c["posted"],
+        "category": c.get("category", "errand"),
+        "when_text": c.get("when_text"),
+        "invited": c.get("invited", False),
     }
 
 
@@ -438,7 +454,7 @@ def _fallback_suggestions(candidates: list[dict]) -> list[dict]:
         first = c["needer_name"].split()[0]
         out.append(_as_suggestion(
             c,
-            title=f"Grab {c['ask']} for {first}"[:60],
+            title=(c["title"] or f"Grab {c['ask']} for {first}")[:60],
             action=(
                 # Not .capitalize() -- that lowercases the rest, mangling
                 # proper nouns like "Trader Joe's".
@@ -484,6 +500,9 @@ async def suggest_favors(conn: asyncpg.Connection, helper_id: str, limit: int = 
                 "asked_for": c["ask"],
                 "neighbor": c["needer_name"],
                 "posted": c["posted"],
+                "category": c.get("category", "errand"),
+                "title": c.get("title"),
+                "when": c.get("when_text"),
                 "signals": c["signals"],
                 # Already written in second person, addressed to the helper, so
                 # the model can lift them almost verbatim instead of

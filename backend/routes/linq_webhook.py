@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Request
 
-from agent.handlers import handle_message
+from agent.favor_flow import handle_inbound
 from agent.linq_client import notify, send_reply
 from agent.store import store
 from services import trellis_client as trellis
@@ -55,12 +55,18 @@ async def linq_webhook(request: Request, background: BackgroundTasks):
 
 
 async def _process(sender: str, chat_id: str | None, text: str) -> None:
-    reply, notifications = handle_message(store, sender, text)
-    try:
-        reply = await _sync_trellis(reply)
-    except Exception as e:  # Trellis drift must never block the reply
-        print(f"[trellis-sync] skipped: {e}", flush=True)
-    await send_reply(reply, chat_id=chat_id, to=sender)
+    replies, notifications = await handle_inbound(store, sender, text)
+    if replies:
+        # First reply (the ack) goes out immediately; the drained grocery
+        # events may append "why you" lines to it.
+        first = replies[0]
+        try:
+            first = await _sync_trellis(first)
+        except Exception as e:  # Trellis drift must never block the reply
+            print(f"[trellis-sync] skipped: {e}", flush=True)
+        await send_reply(first, chat_id=chat_id, to=sender)
+        for extra in replies[1:]:
+            await send_reply(extra, chat_id=chat_id, to=sender)
     for phone, message in notifications:
         await notify(phone, message)
 
@@ -77,7 +83,8 @@ async def _sync_trellis(reply: str) -> str:
         kind = event[0]
         if kind == "ask":
             _, ask, matched_trip, raw_text = event
-            ask.trellis_need_id = await trellis.post_need(ask.user_id, raw_text)
+            if ask.trellis_need_id is None:  # intake may have created it already
+                ask.trellis_need_id = await trellis.post_need(ask.user_id, raw_text)
             if matched_trip and ask.trellis_need_id:
                 await trellis.claim_need(ask.trellis_need_id, matched_trip.shopper_id)
         elif kind == "trip":

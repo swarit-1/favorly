@@ -22,6 +22,40 @@ class FavorIn(BaseModel):
 class NeedIn(BaseModel):
     person_id: str
     body: str
+    # v2, all optional and defaulted -- POST /needs stays backward compatible.
+    category: Optional[str] = None      # errand|borrow|hands|skill|company|ride|care|other
+    title: Optional[str] = None
+    requires: list[str] = Field(default_factory=list)
+    when_text: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    extract: bool = True                # run claim extraction on the body
+
+
+class IntakeIn(BaseModel):
+    person_id: str
+    text: str
+    confirm_right_sized: bool = False
+    source: str = "sms"
+
+
+class NeedOut(BaseModel):
+    id: str
+    category: str = "errand"
+    title: Optional[str] = None
+    body: str
+    requires: list[str] = Field(default_factory=list)
+    when_text: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    items: list[dict] = Field(default_factory=list)
+
+
+class IntakeOut(BaseModel):
+    intent: str                          # ask_favor | offer_help | not_a_favor
+    scope: str                           # ok | too_big | needs_pro | not_ok | unclear
+    scope_reply: Optional[str] = None
+    right_sized: Optional[str] = None
+    need: Optional[NeedOut] = None       # null unless scope == ok
+    parsed_by: str = "rules"             # model | rules
 
 
 class NeedClaimIn(BaseModel):
@@ -74,6 +108,10 @@ class FavorSuggestion(BaseModel):
     signals: dict[str, float]       # what the graph contributed, for transparency
     why: MatchEvidence = Field(default_factory=MatchEvidence)
     posted: str
+    # v2, backward compatible: unknown/missing category decodes as errand.
+    category: str = "errand"
+    when_text: Optional[str] = None
+    invited: bool = False           # the asker picked this helper by name
 
 
 class RecommendationsOut(BaseModel):

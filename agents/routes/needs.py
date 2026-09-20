@@ -1,16 +1,56 @@
 """Posting something you need help with, and getting recommendations back."""
 
+import json
+from datetime import datetime
+
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 import edges as edges_mod
+import llm
 import recommendations
 import sse
 import worker
 from deps import get_conn
-from models import FavorReviewIn, NeedClaimIn, NeedIn, RecommendationsOut
+from models import FavorReviewIn, IntakeIn, IntakeOut, NeedClaimIn, NeedIn, NeedOut, RecommendationsOut
 
 router = APIRouter()
+
+
+def from_jsonb(value, default):
+    """asyncpg returns jsonb as text unless a codec is registered."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return default
+    return value
+
+
+async def _insert_need(
+    conn: asyncpg.Connection, person_id: str, body: str, *,
+    category: str = "errand", title: str | None = None,
+    requires: list[str] | None = None, when_text: str | None = None,
+    duration_minutes: int | None = None, extract: bool = True,
+) -> dict:
+    event_row = await conn.fetchrow(
+        "INSERT INTO events (person_id, kind, body) VALUES ($1, 'message', $2) RETURNING id",
+        person_id, body,
+    )
+    event_id = str(event_row["id"])
+    row = await conn.fetchrow(
+        "INSERT INTO needs (person_id, body, event_id, category, title, requires, when_text, duration_minutes) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
+        "RETURNING id, status, created_at",
+        person_id, body, event_id, category or "errand", title,
+        json.dumps(requires or []), when_text, duration_minutes,
+    )
+    if extract:
+        await worker.enqueue_event(event_id, person_id, body)
+    await sse.publish("need_posted", {"need_id": str(row["id"]), "person_id": person_id})
+    return {"id": str(row["id"]), "status": row["status"], "created_at": row["created_at"]}
 
 
 @router.post("/needs", status_code=201)
@@ -19,24 +59,66 @@ async def create_need(payload: NeedIn, conn: asyncpg.Connection = Depends(get_co
     person = await conn.fetchrow("SELECT id FROM app_people WHERE id = $1", payload.person_id)
     if not person:
         raise HTTPException(404, "person not found")
-
-    # The need text is also an event, so extraction can mine grocery-relevant
-    # signal from it the same way it does any other message.
-    event_row = await conn.fetchrow(
-        "INSERT INTO events (person_id, kind, body) VALUES ($1, 'message', $2) RETURNING id",
-        payload.person_id, payload.body,
+    return await _insert_need(
+        conn, payload.person_id, payload.body,
+        category=payload.category or "errand", title=payload.title,
+        requires=payload.requires, when_text=payload.when_text,
+        duration_minutes=payload.duration_minutes, extract=payload.extract,
     )
-    event_id = str(event_row["id"])
 
-    row = await conn.fetchrow(
-        "INSERT INTO needs (person_id, body, event_id) VALUES ($1, $2, $3) "
-        "RETURNING id, status, created_at",
-        payload.person_id, payload.body, event_id,
+
+@router.post("/needs/intake", response_model=IntakeOut)
+async def intake(payload: IntakeIn, conn: asyncpg.Connection = Depends(get_conn)):
+    """Parse + scope check + create, in one round trip. Does not rank.
+
+    `confirm_right_sized: true` means the text is a previously returned
+    `right_sized` rewrite -- skip the scope check. `offer_help` writes an
+    event and creates no need. Claim extraction never runs inline here.
+    """
+    person = await conn.fetchrow("SELECT id FROM app_people WHERE id = $1", payload.person_id)
+    if not person:
+        raise HTTPException(404, "person not found")
+
+    parsed = llm.parse_favor(payload.text, datetime.now())
+    parsed_by = parsed.get("parsed_by", "rules")
+
+    if payload.confirm_right_sized and parsed["scope"] != "ok":
+        # The asker already said yes to this exact rewrite; trust it.
+        parsed["scope"] = "ok"
+        parsed["scope_reply"] = None
+        if parsed["intent"] != "ask_favor":
+            parsed["intent"] = "ask_favor"
+
+    intent, scope = parsed["intent"], parsed["scope"]
+
+    if intent == "offer_help":
+        row = await conn.fetchrow(
+            "INSERT INTO events (person_id, kind, body) VALUES ($1, 'message', $2) RETURNING id",
+            payload.person_id, payload.text,
+        )
+        await worker.enqueue_event(str(row["id"]), payload.person_id, payload.text)
+        return IntakeOut(intent="offer_help", scope="ok", parsed_by=parsed_by)
+
+    if intent != "ask_favor" or scope != "ok":
+        return IntakeOut(
+            intent=intent, scope=scope, scope_reply=parsed.get("scope_reply"),
+            right_sized=parsed.get("right_sized"), parsed_by=parsed_by,
+        )
+
+    created = await _insert_need(
+        conn, payload.person_id, payload.text,
+        category=parsed["category"], title=parsed.get("title"),
+        requires=parsed.get("requires") or [], when_text=parsed.get("when_text"),
+        duration_minutes=parsed.get("duration_minutes"),
+        extract=False,  # intake never runs claim extraction inline
     )
-    await worker.enqueue_event(event_id, payload.person_id, payload.body)
-    await sse.publish("need_posted", {"need_id": str(row["id"]), "person_id": payload.person_id})
-
-    return {"id": str(row["id"]), "status": row["status"], "created_at": row["created_at"]}
+    need = NeedOut(
+        id=created["id"], category=parsed["category"], title=parsed.get("title"),
+        body=payload.text, requires=parsed.get("requires") or [],
+        when_text=parsed.get("when_text"), duration_minutes=parsed.get("duration_minutes"),
+        items=parsed.get("items") or [],
+    )
+    return IntakeOut(intent="ask_favor", scope="ok", need=need, parsed_by=parsed_by)
 
 
 @router.get("/needs")
@@ -45,7 +127,8 @@ async def list_needs(
     conn: asyncpg.Connection = Depends(get_conn),
 ):
     rows = await conn.fetch(
-        "SELECT n.id, n.person_id, n.body, n.status, n.claimed_by, n.created_at, p.display_name "
+        "SELECT n.id, n.person_id, n.body, n.status, n.claimed_by, n.created_at, p.display_name, "
+        "n.category, n.title, n.requires, n.when_text, n.duration_minutes "
         "FROM needs n JOIN app_people p ON p.id = n.person_id "
         "WHERE n.status = $1 ORDER BY n.created_at DESC",
         status,
@@ -57,6 +140,11 @@ async def list_needs(
                 "posted_by": {"id": str(r["person_id"]), "display_name": r["display_name"]},
                 "claimed_by": str(r["claimed_by"]) if r["claimed_by"] else None,
                 "created_at": r["created_at"],
+                "category": r["category"] or "errand",
+                "title": r["title"],
+                "requires": from_jsonb(r["requires"], []),
+                "when_text": r["when_text"],
+                "duration_minutes": r["duration_minutes"],
             }
             for r in rows
         ]

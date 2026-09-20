@@ -87,6 +87,62 @@ async def post_trip(shopper_id: str, store: str, depart_at) -> None:
     })
 
 
+# ---------------------------------------------------------------------------
+# v2 favor loop: intake, ranking, invites, state. These are request/response
+# (the SMS reply depends on them) so they use the long timeout and return None
+# on any failure -- callers fall back to the rule-based local path.
+# ---------------------------------------------------------------------------
+
+async def _call(method: str, path: str, payload: dict | None = None,
+                params: dict | None = None, timeout: httpx.Timeout = None) -> dict | None:
+    try:
+        async with httpx.AsyncClient(base_url=TRELLIS_BASE_URL, timeout=timeout or _LONG) as client:
+            resp = await client.request(method, path, json=payload, params=params)
+            if resp.status_code >= 400:
+                logger.warning("trellis %s %s returned %s: %s", method, path, resp.status_code, resp.text)
+                return None
+            return resp.json()
+    except httpx.HTTPError as e:
+        logger.warning("trellis %s %s failed: %s", method, path, e)
+        return None
+
+
+async def intake(person_id: str, text: str, confirm_right_sized: bool = False,
+                 source: str = "sms") -> dict | None:
+    return await _call("POST", "/needs/intake", {
+        "person_id": str(person_id), "text": text,
+        "confirm_right_sized": confirm_right_sized, "source": source,
+    })
+
+
+async def helpers(need_id: str, limit: int = 3) -> dict | None:
+    return await _call("GET", f"/needs/{need_id}/helpers", params={"limit": limit})
+
+
+async def invite(need_id: str, helper_id: str) -> dict | None:
+    return await _call("POST", f"/needs/{need_id}/invite", {"helper_id": str(helper_id)})
+
+
+async def respond_invite(need_id: str, helper_id: str, accept: bool) -> dict | None:
+    return await _call("POST", f"/needs/{need_id}/invites/{helper_id}/respond", {"accept": accept})
+
+
+async def broadcast(need_id: str) -> dict | None:
+    return await _call("POST", f"/needs/{need_id}/broadcast", {})
+
+
+async def cancel(need_id: str) -> dict | None:
+    return await _call("POST", f"/needs/{need_id}/cancel", {})
+
+
+async def state(person_id: str) -> dict | None:
+    return await _call("GET", f"/people/{person_id}/state")
+
+
+async def fulfill(need_id: str) -> dict | None:
+    return await _call("POST", f"/needs/{need_id}/fulfill", {})
+
+
 async def get_recommendations(person_id: str, limit: int = 3) -> list[dict]:
     """Graph-ranked favors this person should do, with grounded reasons.
     Empty list on any failure -- callers treat Trellis as best-effort."""

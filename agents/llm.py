@@ -22,13 +22,14 @@ def _get_client():
     return _client
 
 
-def _chat_json(system: str, user: str) -> dict:
+def _chat_json(system: str, user: str, timeout: float | None = None) -> dict:
     client = _get_client()
     resp = client.chat.completions.create(
         model=settings.LLM_MODEL,
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         response_format={"type": "json_object"},
         temperature=0.3,
+        timeout=timeout,
     )
     return json.loads(resp.choices[0].message.content)
 
@@ -107,11 +108,334 @@ def extract_claims(body: str) -> list[dict]:
 
 
 # ============================================================================
+# Favor intake: one lightweight JSON call that parses and right-sizes together.
+# Mock path is a deterministic rule table so intake works with zero API keys.
+# ============================================================================
+
+PARSE_FAVOR_SYSTEM_PROMPT = """You read one text message sent to Favorly, an agent that helps neighbors in the same building do small favors for each other. Return JSON only.
+
+intent:
+- "ask_favor": they want help with something.
+- "offer_help": they are telling you about something they own, know how to do, or are willing to do for neighbors, without asking for anything.
+- "not_a_favor": greetings, questions about the service, anything else.
+
+category (ask_favor only):
+- errand: pick something up on a trip someone is already making (groceries, pharmacy, a package). Fill items.
+- borrow: borrow a physical thing (ladder, drill, folding table, air mattress).
+- hands: an extra pair of hands (move a couch, put up a shelf, carry boxes, hang a mirror).
+- skill: know-how (set up a sound system, fix wifi, tune a bike, hem trousers).
+- company: do something together (a walk, a gym session, coffee, watching the game, studying).
+- ride: a lift somewhere nearby.
+- care: keep an eye on something (water plants, feed a cat, hold a package).
+- other: anything else that still fits the size rule.
+
+THE SIZE RULE. A favor is something one neighbor can do for another in about two hours or less, with no licence, no real danger, and no payment.
+- scope "ok": it fits.
+- scope "too_big": a real need, but too large or too long for one favor (build a house, renovate a kitchen, move a whole apartment, plan my wedding). Do NOT refuse. Put the first useful, concrete, neighbor-sized piece in right_sized, written in the asker's voice, with a rough duration ("help me carry the couch and bed frame down to the truck, about an hour"). scope_reply is one warm sentence that offers it.
+- scope "needs_pro": licensed or risky work (electrical panel, gas, roof, tree felling, medical, legal). scope_reply says a professional should do it. right_sized is a safe adjacent favor if one exists ("ask the building who they would recommend as an electrician"), else null.
+- scope "not_ok": illegal, harmful, sexual or romantic, watching or tracking a person, or paid labour. scope_reply is one polite sentence. No lecture.
+- scope "unclear": you cannot tell what they need. scope_reply is ONE short question.
+Never mention rules or policies. Never moralize. One sentence.
+
+fields:
+- title: imperative, at most 6 words, no names ("Borrow a ladder", "Put up a shelf together", "Walk the reservoir").
+- requires: 0 to 3 lowercase tags a helper would need: things ("ladder", "drill", "car") or skills ("handy", "audio setup", "bike repair"). For company, the activity ("walking", "running"), else empty.
+- when_text: their own words for when, else null.
+- duration_minutes: honest estimate, 15 to 120.
+- items: errand only, [{name, qty, note}].
+No em dashes or en dashes anywhere.
+
+Return: {"intent":..., "category":..., "scope":..., "scope_reply":..., "right_sized":..., "title":..., "requires":[...], "when_text":..., "duration_minutes":..., "items":[...]}"""
+
+_WHEN_RE = re.compile(
+    r"\b(today|tonight|tomorrow|this (?:morning|afternoon|evening|weekend)|"
+    r"(?:mon|tues|wednes|thurs|fri|satur|sun)day(?: morning| afternoon| evening)?|"
+    r"at \d{1,2}(?::\d{2})?\s?(?:am|pm)?|around \d{1,2})\b",
+    re.IGNORECASE,
+)
+
+_DURATION_RE = re.compile(r"\bfor (?:an|a|one) hour\b|\bfor (\d+) ?(hours?|hrs?|min(?:ute)?s?)\b", re.IGNORECASE)
+
+_ARTICLES = {"a", "an", "the", "some", "my", "your", "his", "her", "their", "our"}
+_NOUN_STOPWORDS = {
+    "for", "to", "today", "tonight", "tomorrow", "this", "at", "around", "on",
+    "if", "so", "and", "please", "by", "until", "when", "while", "that", "with",
+    "from", "anyone", "someone", "ever", "one",
+}
+
+_NOT_OK_RE = re.compile(
+    r"follow (my|him|her)|\bspy\b|track (my|his|her)|pay (you|someone)|\bfake\b|prescription",
+    re.IGNORECASE,
+)
+_NEEDS_PRO = [
+    (r"rewire|breaker", "an electrician", "ask the building who they would recommend as an electrician"),
+    (r"gas (line|leak)", "a licensed gas fitter", None),
+    (r"\broof\b", "a roofer", "ask the building who they would recommend as a roofer"),
+    (r"cut down .*tree", "an arborist", "ask the building who they would recommend as an arborist"),
+    (r"asbestos", "a licensed abatement crew", None),
+]
+_TOO_BIG = [
+    (r"build (a|the) house", "help me put together a materials list and price it out, about an hour"),
+    (r"renovate|remodel", "help me clear and prep one room so the work can start, about an hour"),
+    (r"move (apartments|out|house)", "help me carry the couch and bed frame down to the truck, about an hour"),
+    (r"paint (my|the) (whole|entire)", "help me paint one wall to test the color, about an hour"),
+    (r"plan my wedding", "help me fold and stuff the invitations, about an hour"),
+]
+_OFFER_RE = re.compile(
+    r"\bi have (?:a|an|some) .+?(?:if anyone|anyone can|happy to lend)|i can help with",
+    re.IGNORECASE,
+)
+
+_SKILL_MAP = [
+    (r"sound system|speakers|\btv\b", "audio setup"),
+    (r"wifi|router|printer", "wifi"),
+    (r"\bbike\b", "bike repair"),
+]
+
+_ERRAND_RE = re.compile(r"\b(grab|pick up|get me|buy|bring me)\b", re.IGNORECASE)
+_BORROW_RE = re.compile(r"\b(?:borrow|lend me|does anyone have|anyone have an?)\b", re.IGNORECASE)
+_HANDS_RE = re.compile(
+    r"help (?:me |us )?(?:with )?(build|assemble|hang|put up|putting up|move|moving|carry|carrying|lift|lifting|install|installing|mount|mounting)",
+    re.IGNORECASE,
+)
+_SKILL_RE = re.compile(
+    r"(set ?up|setting ?up|fix|repair|tune|configure).*(sound system|speakers|wifi|router|bike|printer|tv)",
+    re.IGNORECASE,
+)
+_COMPANY_RE = re.compile(
+    r"\b(walk|run|jog|coffee|gym|workout|study|watch the game)\b.{0,24}\bwith me\b|anyone want to",
+    re.IGNORECASE,
+)
+_RIDE_RE = re.compile(r"\b(ride|lift|drive me|drop me)\b", re.IGNORECASE)
+_CARE_RE = re.compile(
+    r"\b(water my plants|feed my (?:cat|dog|fish)|watch my|hold a package)\b", re.IGNORECASE,
+)
+_ASKISH_RE = re.compile(r"\b(need|help|can someone|can anyone|could someone|could anyone|anyone)\b", re.IGNORECASE)
+
+_DEFAULT_DURATION = {
+    "errand": 30, "borrow": 30, "hands": 60, "skill": 60,
+    "company": 60, "ride": 20, "care": 20, "other": 30,
+}
+
+
+def _when_text(text: str) -> str | None:
+    m = _WHEN_RE.search(text)
+    return m.group(1).lower() if m else None
+
+
+def _duration(text: str, category: str) -> int:
+    m = _DURATION_RE.search(text)
+    if m:
+        if m.group(1) is None:
+            return 60
+        n = int(m.group(1))
+        if m.group(2).lower().startswith(("hour", "hr")):
+            return min(n * 60, 120)
+        return max(15, min(n, 120))
+    return _DEFAULT_DURATION.get(category, 30)
+
+
+def _noun_after(text: str, start: int, max_words: int = 3) -> str:
+    """The thing being borrowed/fetched: words after the match, articles
+    dropped, stopping at the first filler word."""
+    words = re.findall(r"[a-z0-9']+", text[start:].lower())
+    out: list[str] = []
+    for w in words:
+        if w in _ARTICLES and not out:
+            continue
+        if w in _NOUN_STOPWORDS:
+            break
+        out.append(w)
+        if len(out) >= max_words:
+            break
+    return " ".join(out)
+
+
+def _strip_when(phrase: str) -> str:
+    return _WHEN_RE.sub("", phrase).strip(" ,.")
+
+
+def _split_items(rest: str) -> list[dict]:
+    rest = re.split(r"[.?!]", rest)[0]
+    rest = re.sub(r"^\s*me\s+", "", rest)  # "grab me oat milk" -> "oat milk"
+    rest = _WHEN_RE.sub("", rest)
+    parts = re.split(r",|\band\b|\+|&", rest)
+    items = []
+    for part in parts:
+        name = part.strip(" .!?,")
+        name = re.sub(r"^(some|a|an|the)\s+", "", name)
+        if name and name not in {"me", "please", "thanks", "thank you"}:
+            items.append({"name": name, "qty": 1, "note": None})
+    return items[:6]
+
+
+def _favor(intent="ask_favor", category="other", scope="ok", scope_reply=None,
+           right_sized=None, title=None, requires=None, when_text=None,
+           duration_minutes=None, items=None) -> dict:
+    return {
+        "intent": intent, "category": category, "scope": scope,
+        "scope_reply": scope_reply, "right_sized": right_sized, "title": title,
+        "requires": requires or [], "when_text": when_text,
+        "duration_minutes": duration_minutes, "items": items or [],
+    }
+
+
+def _parse_favor_mock(text: str) -> dict:
+    lowered = text.lower()
+    when = _when_text(text)
+
+    if _NOT_OK_RE.search(lowered):
+        return _favor(scope="not_ok",
+                      scope_reply="That is not something I can help with, sorry.")
+
+    for pattern, pro, adjacent in _NEEDS_PRO:
+        if re.search(pattern, lowered):
+            return _favor(
+                scope="needs_pro", right_sized=adjacent,
+                scope_reply=f"That one really needs {pro}, it is not safe as a neighbor favor.",
+            )
+
+    for pattern, right_sized in _TOO_BIG:
+        if re.search(pattern, lowered):
+            return _favor(
+                scope="too_big", right_sized=right_sized,
+                scope_reply=(
+                    "That is bigger than one favor, but here is a first piece a "
+                    f"neighbor could do: {right_sized}."
+                ),
+            )
+
+    if _OFFER_RE.search(lowered):
+        return _favor(intent="offer_help", category="other")
+
+    m = _BORROW_RE.search(lowered)
+    if m:
+        noun = _noun_after(lowered, m.end()) or "it"
+        return _favor(
+            category="borrow", title=f"Borrow a {noun}"[:60], requires=[noun],
+            when_text=when, duration_minutes=_duration(lowered, "borrow"),
+        )
+
+    m = _SKILL_RE.search(lowered)
+    if m:
+        skill = next((s for p, s in _SKILL_MAP if re.search(p, m.group(2))), m.group(2))
+        thing = m.group(2)
+        return _favor(
+            category="skill", title=f"Set up the {thing}"[:60] if "set" in m.group(1) else f"Fix the {thing}"[:60],
+            requires=[skill], when_text=when,
+            duration_minutes=_duration(lowered, "skill"),
+        )
+
+    m = _HANDS_RE.search(lowered)
+    if m:
+        verb = m.group(1).lower()
+        base = {"putting up": "put up", "moving": "move", "carrying": "carry",
+                "lifting": "lift", "installing": "install", "mounting": "mount"}.get(verb, verb)
+        requires = ["handy"]
+        if base in ("build", "hang", "mount", "put up"):
+            requires.append("drill")
+        obj = _strip_when(_noun_after(lowered, m.end())) or "something"
+        return _favor(
+            category="hands", title=f"{base.capitalize()} a {obj} together"[:60],
+            requires=requires, when_text=when,
+            duration_minutes=_duration(lowered, "hands"),
+        )
+
+    m = _COMPANY_RE.search(lowered)
+    if m:
+        activity_word = (m.group(1) or "").lower()
+        activity = {"walk": "walking", "run": "running", "jog": "running"}.get(activity_word, activity_word)
+        if not activity:
+            n = _noun_after(lowered, m.end())
+            activity = {"walk": "walking", "run": "running", "go on a walk": "walking"}.get(n, n)
+            if "walk" in n:
+                activity = "walking"
+            elif "run" in n:
+                activity = "running"
+        title_bit = activity or "hanging out"
+        return _favor(
+            category="company", title=f"Go for a {activity_word or 'walk'} together"[:60],
+            requires=[title_bit] if title_bit else [], when_text=when,
+            duration_minutes=_duration(lowered, "company"),
+        )
+
+    m = _RIDE_RE.search(lowered)
+    if m:
+        dest_m = re.search(r"\b(?:to|into)\s+([a-z0-9' ]+?)(?:\s+at\b|\s+around\b|[.,!?]|$)", lowered[m.end():])
+        dest = dest_m.group(1).strip() if dest_m else None
+        return _favor(
+            category="ride", title=(f"Ride to {dest}" if dest else "Give a ride")[:60],
+            requires=["car"], when_text=when,
+            duration_minutes=_duration(lowered, "ride"),
+        )
+
+    m = _CARE_RE.search(lowered)
+    if m:
+        phrase = m.group(1)
+        title = re.sub(r"\bmy\b", "the", phrase).capitalize()
+        return _favor(
+            category="care", title=title[:60], when_text=when,
+            duration_minutes=_duration(lowered, "care"),
+        )
+
+    m = _ERRAND_RE.search(lowered)
+    if m:
+        items = _split_items(lowered[m.end():])
+        if items:
+            names = " and ".join(i["name"] for i in items[:2])
+            return _favor(
+                category="errand", title=f"Grab {names}"[:60],
+                when_text=when, duration_minutes=_duration(lowered, "errand"),
+                items=items,
+            )
+
+    if _ASKISH_RE.search(lowered):
+        return _favor(scope="unclear", scope_reply="What do you need a hand with?")
+    return _favor(intent="not_a_favor")
+
+
+_VALID_CATEGORIES = {"errand", "borrow", "hands", "skill", "company", "ride", "care", "other"}
+_VALID_SCOPES = {"ok", "too_big", "needs_pro", "not_ok", "unclear"}
+
+
+def parse_favor(text: str, now=None) -> dict:
+    """One message in, a parsed + scope-checked favor out. Real path is a 4 s
+    JSON call; any failure (or MOCK_LLM) uses the deterministic rules above."""
+    if not settings.MOCK_LLM and settings.LLM_API_KEY:
+        try:
+            when_str = now.strftime("%A %I:%M %p") if now else ""
+            raw = _chat_json(
+                PARSE_FAVOR_SYSTEM_PROMPT,
+                f"Current local time: {when_str}\nMessage: {text}",
+                timeout=4.0,
+            )
+            out = _favor(
+                intent=raw.get("intent") if raw.get("intent") in ("ask_favor", "offer_help", "not_a_favor") else "not_a_favor",
+                category=raw.get("category") if raw.get("category") in _VALID_CATEGORIES else "other",
+                scope=raw.get("scope") if raw.get("scope") in _VALID_SCOPES else "ok",
+                scope_reply=raw.get("scope_reply"),
+                right_sized=raw.get("right_sized"),
+                title=raw.get("title"),
+                requires=[str(r).lower() for r in (raw.get("requires") or [])][:3],
+                when_text=raw.get("when_text"),
+                duration_minutes=raw.get("duration_minutes"),
+                items=[i for i in (raw.get("items") or []) if isinstance(i, dict) and i.get("name")],
+            )
+            out["parsed_by"] = "model"
+            return out
+        except Exception:
+            pass
+    out = _parse_favor_mock(text)
+    out["parsed_by"] = "rules"
+    return out
+
+
+# ============================================================================
 # Canonicalization adjudication (middle similarity band only)
 # ============================================================================
 
 DECIDE_SYSTEM_PROMPT = """You decide which favors a neighbor should do in a
-neighborhood grocery app.
+neighborhood favor app.
 
 You are given a `helper` (the person you're advising) and a list of
 `candidates` -- open requests from neighbors, each already scored by the
@@ -140,12 +464,13 @@ Rules:
   don't name one.
 - Write to the helper as "you". Never say "the helper", and never echo the
   field names or formatting of this input.
-- `title`: under 6 words, imperative, names the item and the neighbor's first
-  name, e.g. "Grab oat milk for Bob".
+- `title`: under 6 words, imperative, names the favor and the neighbor's first
+  name, e.g. "Lend Bob a ladder" or "Walk the reservoir with Priya".
 - `action`: one short line describing what they'd actually do.
 - `reason`: one sentence, under 25 words, saying why this person specifically.
   Never imply debt or obligation -- no "you owe them" or "pay it back".
 - Never use em dashes or en dashes. Use commas, colons or full stops.
+- Never guess anyone's gender: use their name or "they".
 - The favor is the occasion; the connection between two neighbors is the
   point. Frame each one as one person showing up for another, not as a task
   being dispatched. You are pointing, not deciding for them.
