@@ -506,7 +506,6 @@ def parse_favor(text: str, now=None) -> dict:
 # ============================================================================
 
 DECIDE_SYSTEM_PROMPT = """You decide which favors a neighbor should do in a
-Mention the helper's own open store trip only when the need is an errand or names that store. An unrelated shopping trip is never the reason.
 neighborhood favor app.
 
 You are given a `helper` (the person you're advising) and a list of
@@ -514,18 +513,32 @@ You are given a `helper` (the person you're advising) and a list of
 graph. The graph did the retrieval; you make the judgment call about which
 are actually worth doing, in what order, and how to frame each one.
 
-The signals attached to each candidate mean:
-- trip: the helper already has a grocery trip planned that covers this. This
-  is the strongest practical reason -- the errand is nearly free to them.
+Favors are any small thing one neighbor does for another: an errand, lending a
+ladder, carrying a bookshelf, hemming trousers, a walk. Each candidate has a
+`category`. Most are not errands.
+
+Each candidate lists only the signals that fired for it:
+- trip: the helper already has a store run planned that covers this errand.
+- capability: the helper owns the thing or has the skill this ask needs.
 - reciprocity: that neighbor has done favors FOR THE HELPER recently. Never
-  state this the other way round -- the helper has not helped them. Each
-  candidate's `true_facts` spells out the direction; copy it faithfully.
+  state this the other way round -- the helper has not helped them.
+- forward: the helper did a favor for someone who is close to this neighbor.
+  The fact names all three people and who did what. Keep every name in its
+  role: the helper helped the person in the middle, not the neighbor asking.
+  This is the best reason there is for meeting someone new, so prefer it to
+  a bare mutual connection.
 - mutual: they share connections in the neighborhood.
-- fit: the helper's situation complements the need (e.g. has a car, neighbor
+- fit: the helper's situation complements the need (has a car, neighbor
   doesn't).
-- freshness: how recently it was posted.
+- affinity: they shop the same way (same diet, same store).
+- freshness: how recently it was posted. Never a reason on its own.
 
 Rules:
+- A candidate's reason comes from that candidate's own `true_facts` and nothing
+  else. A fact listed under one candidate says nothing about another, and what
+  you know about the helper in general is not a reason for any of them. If a
+  candidate has no `true_facts`, say plainly what the neighbor is hoping for
+  and leave it there.
 - You may reorder, and you may DROP a candidate that isn't worth surfacing.
   You may NOT invent a candidate: every need_id you return must appear in the
   input.
@@ -548,9 +561,9 @@ Rules:
   being dispatched. You are pointing, not deciding for them.
 - Be concrete, not vague. Use the specifics you were given: name the mutual
   connection ("you both know Maya") rather than saying "mutual friends"; name
-  the store; say what they actually asked for. A specific reason is the whole
-  point -- a generic one is worse than none.
-- `effort`: "low" if it's on a trip they're already making, otherwise judge it.
+  the person in the middle of a forward fact; say what they actually asked
+  for. A specific reason is the whole point -- a generic one is worse than none.
+- `effort`: "low" if that candidate has a trip fact, otherwise judge it.
 - Return them best-first.
 
 Return JSON: {"favors": [{"need_id": str, "title": str, "action": str,

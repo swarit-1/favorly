@@ -91,6 +91,11 @@ class MatchEvidence(BaseModel):
     trip_reason: str | None = None
     fit_reason: str | None = None
     affinity_reason: str | None = None
+    capability_reason: str | None = None
+    # Pay it forward: the helper did a favor for `forward_via`, who is tied to
+    # the asker. "Nora, who you recently helped out, knows Priya".
+    forward_reason: str | None = None
+    forward_via: str | None = None
     graph_reason: str | None = None  # the sentence the deterministic ranking would have written
 
 

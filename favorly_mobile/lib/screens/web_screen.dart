@@ -444,6 +444,7 @@ class _MatchRowState extends State<_MatchRow> {
   static const _labels = {
     'trip': 'Already going',
     'reciprocity': 'They helped you',
+    'forward': 'You helped their friend',
     'mutual': 'Shared neighbors',
     'fit': 'You can, they cannot',
     'affinity': 'You know this need',
@@ -601,6 +602,8 @@ class _Breakdown extends StatelessWidget {
         return why.mutualNames.isEmpty
             ? null
             : joinNames(why.mutualNames.take(2).toList());
+      case 'forward':
+        return why.forwardReason;
       case 'fit':
         return why.fitReason;
       case 'affinity':
