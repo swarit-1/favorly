@@ -68,6 +68,7 @@ class MatchEvidence {
     this.tripReason,
     this.fitReason,
     this.affinityReason,
+    this.forwardReason,
     this.graphReason,
   });
 
@@ -86,6 +87,12 @@ class MatchEvidence {
   final String? fitReason;
   final String? affinityReason;
 
+  /// Pay it forward: you did a favor for someone who is tied to the asker
+  /// ("Nora, who you recently helped out, knows Priya"). Direction matters
+  /// here as much as it does for [favorCount]: you helped the person in the
+  /// middle, not the person asking.
+  final String? forwardReason;
+
   /// The sentence the deterministic ranking would have written on its own.
   /// When the model phrased the reason, this is what it replaced.
   final String? graphReason;
@@ -97,7 +104,8 @@ class MatchEvidence {
       favorCount == 0 &&
       tripReason == null &&
       fitReason == null &&
-      affinityReason == null;
+      affinityReason == null &&
+      forwardReason == null;
 
   /// What this signal contributed to the final score: its weight times how
   /// strongly it fired. Falls back to the raw value when the server sent no
@@ -126,6 +134,7 @@ class MatchEvidence {
       tripReason: _orNull(json['trip_reason']),
       fitReason: _orNull(json['fit_reason']),
       affinityReason: _orNull(json['affinity_reason']),
+      forwardReason: _orNull(json['forward_reason']),
       graphReason: _orNull(json['graph_reason']),
     );
   }
@@ -137,6 +146,7 @@ class MatchEvidence {
         'trip_reason': tripReason,
         'fit_reason': fitReason,
         'affinity_reason': affinityReason,
+        'forward_reason': forwardReason,
         'graph_reason': graphReason,
       };
 }

@@ -18,6 +18,7 @@ so the frontend contract never changes.
 
 import math
 import re
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import asyncpg
@@ -33,14 +34,27 @@ from config import settings
 WEIGHTS = {
     "trip": 0.20,          # you already have a trip that covers this
     "capability": 0.20,    # you have the thing or the skill the ask needs
-    "reciprocity": 0.20,   # they've helped you before
-    "mutual": 0.15,        # you share a connection
+    "reciprocity": 0.15,   # they've helped you before
+    "forward": 0.10,       # you helped someone who is tied to them
+    "mutual": 0.10,        # you share a connection
     "affinity": 0.10,      # you share the datapoints the ask depends on
     "fit": 0.10,           # your grocery claims complement their need
     "freshness": 0.05,     # tiebreaker only
 }
 
 FRESHNESS_HALFLIFE_HOURS = 48.0
+
+# Signals that only mean something for a given kind of ask. A car, a store run
+# and a shared diet are reasons to pick up groceries; none of them is a reason
+# to hem trousers or walk the reservoir. Anything not listed applies everywhere.
+_SIGNAL_CATEGORIES = {
+    "fit": {"errand", "ride"},
+    "affinity": {"errand"},
+}
+
+# An open trip whose departure is this far behind us is a row nobody closed,
+# not a plan. Without the bound, yesterday's run is "you're going today" forever.
+TRIP_STALE_AFTER = "2 hours"
 
 # Filler stripped when quoting a need back in a reason sentence.
 _ASK_FILLER = re.compile(
@@ -53,37 +67,147 @@ _ASK_FILLER = re.compile(
 )
 
 
-async def _reciprocity(conn: asyncpg.Connection, helper_id: str, needer_id: str) -> tuple[float, int]:
+@dataclass
+class FavorGraph:
+    """The edge table, decayed and folded once per ranking call.
+
+    `ties` is undirected and carries the summed, kind-weighted strength of
+    everything between two people (favor 1.0 decaying, knows 0.6, same-floor
+    neighbor 0.25) -- the number every graph signal below is scaled by.
+    `favors` stays directed, because "they helped you" and "you helped them"
+    are different facts and only one of them may be said.
+    """
+
+    ties: dict[str, dict[str, float]] = field(default_factory=dict)
+    kinds: dict[str, dict[str, set]] = field(default_factory=dict)
+    # (giver, receiver) -> (decayed strength, count)
+    favors: dict[tuple[str, str], tuple[float, int]] = field(default_factory=dict)
+    # (giver, receiver) -> title of the latest favor between them, when the
+    # favor came through a need. Seeded history has no need behind it.
+    favor_titles: dict[tuple[str, str], str] = field(default_factory=dict)
+    names: dict[str, str] = field(default_factory=dict)
+
+    def add(self, src: str, dst: str, kind: str, strength: float, count: int = 1) -> None:
+        if src == dst:
+            return
+        for a, b in ((src, dst), (dst, src)):
+            self.ties.setdefault(a, {})
+            self.ties[a][b] = self.ties[a].get(b, 0.0) + strength
+            self.kinds.setdefault(a, {}).setdefault(b, set()).add(kind)
+        if kind == "favor":
+            s, n = self.favors.get((src, dst), (0.0, 0))
+            self.favors[(src, dst)] = (s + strength, n + count)
+
+    def first_name(self, person_id: str) -> str:
+        name = self.names.get(person_id) or ""
+        return name.split()[0] if name else ""
+
+
+async def load_favor_graph(conn: asyncpg.Connection, helper_id: str) -> FavorGraph:
+    """Three queries however many needs are being ranked (this replaced a
+    reciprocity query and a mutuals query per need)."""
+    rows = await conn.fetch(
+        "SELECT src_id, dst_id, kind, COUNT(*) AS n, "
+        "SUM(weight * CASE WHEN kind IN ('favor','co_occurrence') "
+        "    THEN EXP(-EXTRACT(EPOCH FROM (now() - created_at)) / $1) ELSE 1 END) AS strength "
+        "FROM edges WHERE src_id <> dst_id "
+        "GROUP BY src_id, dst_id, kind",
+        settings.EDGE_DECAY_SECONDS,
+    )
+    g = FavorGraph()
+    for r in rows:
+        g.add(str(r["src_id"]), str(r["dst_id"]), r["kind"], float(r["strength"]), count=int(r["n"]))
+    if g.ties:
+        people = await conn.fetch(
+            "SELECT id, display_name FROM app_people WHERE id = ANY($1::uuid[])",
+            list(g.ties.keys()),
+        )
+        g.names = {str(p["id"]): p["display_name"] or "" for p in people}
+    # What this helper actually did, for "who you helped to borrow a ladder".
+    done = await conn.fetch(
+        "SELECT DISTINCT ON (person_id) person_id, title FROM needs "
+        "WHERE status = 'fulfilled' AND claimed_by = $1 AND title IS NOT NULL "
+        "ORDER BY person_id, resolved_at DESC NULLS LAST",
+        helper_id,
+    )
+    for r in done:
+        g.favor_titles[(helper_id, str(r["person_id"]))] = r["title"]
+    return g
+
+
+def _reciprocity(g: FavorGraph, helper_id: str, needer_id: str) -> tuple[float, int]:
     """Decayed weight of favors the needer has done *for the helper*. This is
     the "they helped you, want to return it" signal."""
-    row = await conn.fetchrow(
-        "SELECT COALESCE(SUM(weight * EXP(-EXTRACT(EPOCH FROM (now() - created_at)) / $3)), 0) AS s, "
-        "       COUNT(*) AS n "
-        "FROM edges WHERE src_id = $1 AND dst_id = $2 AND kind = 'favor'",
-        needer_id, helper_id, settings.EDGE_DECAY_SECONDS,
-    )
-    return min(float(row["s"]), 1.0), int(row["n"])
+    strength, count = g.favors.get((needer_id, helper_id), (0.0, 0))
+    return min(strength, 1.0), count
 
 
-async def _mutuals(conn: asyncpg.Connection, helper_id: str, needer_id: str) -> list[str]:
-    """Names of people both of you have exchanged favors with."""
-    rows = await conn.fetch(
-        """
-        SELECT p.display_name FROM app_people p WHERE p.id IN (
-          SELECT id FROM (
-            SELECT dst_id AS id FROM edges WHERE src_id = $1
-            UNION SELECT src_id AS id FROM edges WHERE dst_id = $1
-          ) AS a
-          INTERSECT
-          SELECT id FROM (
-            SELECT dst_id AS id FROM edges WHERE src_id = $2
-            UNION SELECT src_id AS id FROM edges WHERE dst_id = $2
-          ) AS b
-        ) AND p.id NOT IN ($1, $2)
-        """,
-        helper_id, needer_id,
-    )
-    return [r["display_name"] for r in rows]
+def _mutuals(g: FavorGraph, helper_id: str, needer_id: str) -> list[tuple[str, float]]:
+    """(person_id, strength) for everyone tied to both of you, strongest first.
+
+    Strength is the weaker leg of the two-hop path, the same bottleneck rule
+    matching.tie_signal uses. Someone you have both traded favors with is a
+    real connection; someone who merely shares a floor with each of you is a
+    quarter of one. Counting heads, as this used to, scored them the same."""
+    mine, theirs = g.ties.get(helper_id, {}), g.ties.get(needer_id, {})
+    shared = [
+        (pid, min(mine[pid], theirs[pid]))
+        for pid in mine.keys() & theirs.keys()
+        if pid not in (helper_id, needer_id)
+    ]
+    return sorted(shared, key=lambda m: (-m[1], g.names.get(m[0], "")))
+
+
+_FORWARD_RELATION = (
+    # Strongest kind of tie between the person you helped and the asker wins.
+    ("knows", "knows {needer}"),
+    ("favor", "has traded favors with {needer}"),
+    ("co_occurrence", "runs into {needer} a lot"),
+    ("neighbor", "lives on {needer}'s floor"),
+)
+
+
+def _forward(g: FavorGraph, helper_id: str, needer_id: str) -> tuple[float, str | None, str | None]:
+    """Pay it forward: you helped Y, and Y is tied to the person asking.
+
+    Returns (value, via_id, reason). The value is the weaker of "how much you
+    did for Y" and "how close Y is to them", so a fresh favor for the asker's
+    good friend outranks an old one for someone who shares their hallway. This
+    is the path that closes a triangle: a favor for Y's friend turns a two-hop
+    tie into a direct one."""
+    best: tuple[float, str] | None = None
+    for (giver, receiver), (given, _) in g.favors.items():
+        if giver != helper_id or receiver == needer_id:
+            continue
+        tie = g.ties.get(receiver, {}).get(needer_id, 0.0)
+        if tie <= 0:
+            continue
+        value = min(min(given, 1.0), min(tie, 1.0))
+        if best is None or value > best[0]:
+            best = (value, receiver)
+    if best is None:
+        return 0.0, None, None
+
+    value, via = best
+    via_name, needer_name = g.first_name(via), g.first_name(needer_id)
+    if not via_name or not needer_name:
+        return value, via, None
+    kinds = g.kinds.get(via, {}).get(needer_id, set())
+    relation = next((text for kind, text in _FORWARD_RELATION if kind in kinds), None)
+    if relation is None:
+        return value, via, None
+    # Titles are imperative by contract ("Borrow a ladder"), so they read
+    # cleanly after "helped to". The rule parser's catch-all keeps the asker's
+    # own words ("Help me untangle my bike chain"), which do not: skip those.
+    title = (g.favor_titles.get((helper_id, via)) or "").strip().rstrip(".")
+    if title and not _FIRST_PERSON.search(title):
+        did = f"you helped to {title[0].lower()}{title[1:]}"
+    else:
+        did = "you recently helped out"
+    return value, via, f"{via_name}, who {did}, {relation.format(needer=needer_name)}"
+
+
+_FIRST_PERSON = re.compile(r"\b(i|me|my|mine|we|us|our)\b", re.IGNORECASE)
 
 
 async def _upcoming_trip(conn: asyncpg.Connection, helper_id: str) -> dict | None:
@@ -94,7 +218,8 @@ async def _upcoming_trip(conn: asyncpg.Connection, helper_id: str) -> dict | Non
     try:
         row = await conn.fetchrow(
             "SELECT id, store, depart_at FROM trips "
-            "WHERE shopper_id = $1 AND status IN ('open', 'shopping') "
+            "WHERE shopper_id = $1 AND (status = 'shopping' OR "
+            f"  (status = 'open' AND depart_at > now() - interval '{TRIP_STALE_AFTER}')) "
             "ORDER BY depart_at ASC LIMIT 1",
             helper_id,
         )
@@ -245,7 +370,7 @@ def _build_reason(needer_name: str, parts: dict, detail: dict) -> str:
     assert anything the graph doesn't hold. Always names the actual ask: the
     point is "why you, for this", not "here is a thing that exists"."""
     first_name = needer_name.split()[0]
-    ask = detail["ask"]
+    ask = _ask_sentence(first_name, detail)
 
     # Ordered by how actionable each signal is, strongest first.
     fragments = []
@@ -260,8 +385,13 @@ def _build_reason(needer_name: str, parts: dict, detail: dict) -> str:
         fragments.append(
             f"{first_name} helped you out {n} time{'s' if n != 1 else ''} recently"
         )
-    if parts["mutual"] > 0:
-        fragments.append(f"you both know {', '.join(detail['mutual_names'][:2])}")
+    if detail.get("forward_reason"):
+        fragments.append(detail["forward_reason"])
+    # The person a forward path runs through is a mutual by definition. Saying
+    # "you helped Nora, who knows Priya, and you both know Nora" is one fact twice.
+    mutual_names = [n for n in detail["mutual_names"] if n != detail.get("forward_via_name")]
+    if parts["mutual"] > 0 and mutual_names:
+        fragments.append(f"you both know {', '.join(mutual_names[:2])}")
     if detail["fit_reason"]:
         fragments.append(detail["fit_reason"])
     if detail.get("affinity_reason"):
@@ -270,12 +400,24 @@ def _build_reason(needer_name: str, parts: dict, detail: dict) -> str:
     if not fragments:
         # No connection to draw on -- say the honest thing, and still lead with
         # the ask rather than restating metadata.
-        return f"{first_name} needs {ask}. No one's offered yet."
+        return f"{ask} No one's offered yet."
 
     lead = fragments[0][0].upper() + fragments[0][1:]
-    if len(fragments) > 1:
+    # The forward fragment already carries two commas; chaining a second
+    # fragment onto it reads as a list of three unrelated things.
+    if len(fragments) > 1 and fragments[0] != detail.get("forward_reason"):
         lead += f", and {fragments[1]}"
-    return f"{lead}. {first_name} needs {ask}."
+    return f"{lead}. {ask}"
+
+
+def _ask_sentence(first_name: str, detail: dict) -> str:
+    """"Grace needs milk and eggs." is right for an errand and wrong for
+    everything else ("Priya needs anyone up for the reservoir loop"). Any
+    other favor quotes its title, in the invite copy's own words."""
+    title = (detail.get("title") or "").strip().rstrip(".")
+    if detail.get("category", "errand") == "errand" or not title:
+        return f"{first_name} needs {detail['ask']}."
+    return f"{first_name} is hoping for a hand: {title[0].lower()}{title[1:]}."
 
 
 _REASON_STOPWORDS = {
@@ -304,7 +446,16 @@ def validate_reason(text: str, allowed_text: str) -> bool:
         prefix = text[: match.start()].rstrip()
         at_sentence_start = prefix == "" or prefix[-1] in ".!?—-"
         is_proper = token[0].isupper() and not at_sentence_start
-        if is_proper and token.lower() not in allowed and token.lower() not in _REASON_STOPWORDS:
+        if not is_proper:
+            continue
+        # "Swarit's" is one token here, and the facts only ever say "Swarit".
+        # Checking it whole rejected every possessive of a neighbor's name --
+        # which is the title the prompt asks for ("Untangle Swarit's bike
+        # chain") -- and dropped the recommendation with it. The whole token is
+        # still tried first so a name that owns its apostrophe ("Joe's") passes.
+        lowered = token.lower()
+        forms = {lowered, lowered.removesuffix("'s"), lowered.strip("'")}
+        if not any(f and (f in allowed or f in _REASON_STOPWORDS) for f in forms):
             return False
     return True
 
@@ -326,22 +477,31 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
 
     helper_claims = await _claims(conn, helper_id)
     trip = await _upcoming_trip(conn, helper_id)
+    graph = await load_favor_graph(conn, helper_id)
     out = []
 
     for need in needs:
         needer_id = str(need["person_id"])
+        category = need["category"] or "errand"
 
         trip_score, trip_reason = _trip_signal(trip, need["body"])
         # An open grocery run says nothing about a bookshelf carry or a walk:
         # keep the trip signal only for errands, or when the ask names the store.
-        if (need["category"] or "errand") != "errand" and trip_score < 1.0:
+        if category != "errand" and trip_score < 1.0:
             trip_score, trip_reason = 0.0, None
-        reciprocity, favor_count = await _reciprocity(conn, helper_id, needer_id)
-        mutual_names = await _mutuals(conn, helper_id, needer_id)
-        mutual = min(len(mutual_names) / 2.0, 1.0)
+        reciprocity, favor_count = _reciprocity(graph, helper_id, needer_id)
+        mutuals = _mutuals(graph, helper_id, needer_id)
+        mutual_names = [graph.names[pid] for pid, _ in mutuals if graph.names.get(pid)]
+        mutual = min(sum(strength for _, strength in mutuals), 1.0)
+        forward, forward_via, forward_reason = _forward(graph, helper_id, needer_id)
         needer_claims = await _claims(conn, needer_id)
         fit, fit_reason = _fit(helper_claims, needer_claims)
         affinity, affinity_reason = _affinity(helper_claims, needer_claims, need["body"])
+        # Same rule as the trip gate, for the other two grocery-era signals.
+        if category not in _SIGNAL_CATEGORIES["fit"]:
+            fit, fit_reason = 0.0, None
+        if category not in _SIGNAL_CATEGORIES["affinity"]:
+            affinity, affinity_reason = 0.0, None
         freshness, age_hours = _freshness(need["created_at"])
 
         # v2: do I have the thing or the skill this ask depends on?
@@ -350,7 +510,7 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
             r for r in (matching_mod._from_jsonb(need["requires"], []) or []) if r
         ]
         cap, cap_headline = matching_mod.capability(
-            need["category"] or "errand", requires, helper_claims,
+            category, requires, helper_claims,
         )
         cap_reason = None
         if cap > 0 and requires:
@@ -360,6 +520,7 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
             "trip": trip_score,
             "capability": cap,
             "reciprocity": reciprocity,
+            "forward": forward,
             "mutual": mutual,
             "fit": fit,
             "affinity": affinity,
@@ -369,11 +530,15 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
         detail = {
             "favor_count": favor_count,
             "mutual_names": mutual_names,
+            "forward_reason": forward_reason,
+            "forward_via_name": graph.names.get(forward_via) if forward_via else None,
             "fit_reason": fit_reason,
             "affinity_reason": affinity_reason,
             "trip_reason": trip_reason,
             "capability_reason": cap_reason,
             "ask": _summarize_ask(need["body"]),
+            "title": need["title"],
+            "category": category,
             "age": _describe_age(age_hours),
         }
         if need["invite_status"] == "pending":
@@ -415,6 +580,32 @@ def _reciprocity_fact(needer_name: str, favor_count: int) -> str | None:
     return f"{first} helped you out {times} recently"
 
 
+def _true_facts(c: dict) -> list[str]:
+    """Everything the model may say about one candidate, already written in
+    second person and already directional, so it can lift a fact almost
+    verbatim instead of paraphrasing (and inverting) it.
+
+    This is every signal that fired, not a subset. It used to omit capability
+    and affinity, so the model was shown a nonzero capability score with
+    nothing to say about it and wrote "No mutual connections noted." for a
+    helper whose actual reason was that they own the drill."""
+    detail = c["detail"]
+    first = c["needer_name"].split()[0]
+    # The forward path's middle person is already named in that fact.
+    mutuals = [n.split()[0] for n in detail["mutual_names"] if n != detail.get("forward_via_name")]
+    facts = [
+        detail.get("invite_reason"),
+        detail["trip_reason"],
+        detail.get("capability_reason"),
+        _reciprocity_fact(c["needer_name"], detail["favor_count"]),
+        detail.get("forward_reason"),
+        f"you and {first} both know {', '.join(mutuals)}" if mutuals else None,
+        detail["fit_reason"],
+        detail.get("affinity_reason"),
+    ]
+    return [f for f in facts if f]
+
+
 # The app's copy has no dashes in it. The prompt says so, but a model that
 # slips one in shouldn't put it on someone's home screen, so it is stripped on
 # the way out rather than trusted on the way in.
@@ -444,6 +635,9 @@ def _why(c: dict) -> dict:
         "trip_reason": detail["trip_reason"],
         "fit_reason": detail["fit_reason"],
         "affinity_reason": detail["affinity_reason"],
+        "capability_reason": detail.get("capability_reason"),
+        "forward_reason": detail.get("forward_reason"),
+        "forward_via": detail.get("forward_via_name"),
         # The template sentence the graph alone would have produced. When the
         # model wrote `reason`, this is what it replaced -- worth showing side
         # by side in a "how this was decided" view.
@@ -479,17 +673,30 @@ def _fallback_suggestions(candidates: list[dict]) -> list[dict]:
         out.append(_as_suggestion(
             c,
             title=(c["title"] or f"Grab {c['ask']} for {first}")[:60],
-            action=(
-                # Not .capitalize() -- that lowercases the rest, mangling
-                # proper nouns like "Trader Joe's".
-                c["detail"]["trip_reason"][0].upper() + c["detail"]["trip_reason"][1:]
-                if c["detail"]["trip_reason"]
-                else f"Pick up {c['ask']} for {first}"
-            ),
+            action=_fallback_action(c, first),
             reason=c["template_reason"],
             effort="low" if c["signals"]["trip"] > 0 else "medium",
         ))
     return out
+
+
+def _fallback_action(c: dict, first: str) -> str:
+    trip_reason = c["detail"]["trip_reason"]
+    if trip_reason:
+        # Not .capitalize() -- that lowercases the rest, mangling proper nouns
+        # like "Trader Joe's".
+        return trip_reason[0].upper() + trip_reason[1:]
+    title = (c.get("title") or "").strip().rstrip(".")
+    category = c.get("category", "errand")
+    # "Pick up" is an errand verb. It used to be the only one, which produced
+    # "Pick up anyone up for the reservoir loop for Priya".
+    if category == "errand" or not title:
+        return f"Pick up {c['ask']} for {first}"
+    if _FIRST_PERSON.search(title):
+        return f"Give {first} a hand"
+    if category == "company":
+        return f"{title} with {first}"
+    return f"{title} for {first}"
 
 
 async def suggest_favors(conn: asyncpg.Connection, helper_id: str, limit: int = 10) -> dict:
@@ -502,16 +709,17 @@ async def suggest_favors(conn: asyncpg.Connection, helper_id: str, limit: int = 
     by_id = {c["need_id"]: c for c in candidates}
     helper = await conn.fetchrow("SELECT display_name FROM app_people WHERE id = $1", helper_id)
     helper_claims = await _claims(conn, helper_id)
-    trip = await _upcoming_trip(conn, helper_id)
+    facts_by_id = {c["need_id"]: _true_facts(c) for c in candidates}
 
     context = {
+        # No `upcoming_trip` here. The helper's store run used to ride along at
+        # the top of every request, so the model cited it for walks, bookshelves
+        # and hemming alike -- it was the one specific, nameable fact in view.
+        # A trip now reaches the model only as a `true_fact` on a candidate it
+        # is actually a reason for (see the category gate in recommend_for).
         "helper": {
             "display_name": helper["display_name"] if helper else "",
             "about": [c["raw_label"] for c in helper_claims],
-            "upcoming_trip": (
-                {"store": trip["store"], "when": _describe_when(trip["depart_at"])}
-                if trip else None
-            ),
         },
         # Facts are handed over pre-phrased and directional. A bare
         # `favor_count: 2` invites the model to invert who helped whom -- and
@@ -527,25 +735,10 @@ async def suggest_favors(conn: asyncpg.Connection, helper_id: str, limit: int = 
                 "category": c.get("category", "errand"),
                 "title": c.get("title"),
                 "when": c.get("when_text"),
-                "signals": c["signals"],
-                # Already written in second person, addressed to the helper, so
-                # the model can lift them almost verbatim instead of
-                # paraphrasing (and inverting) them.
-                "true_facts": [
-                    f
-                    for f in [
-                        _reciprocity_fact(c["needer_name"], c["detail"]["favor_count"]),
-                        (
-                            f"you and {c['needer_name'].split()[0]} both know "
-                            + ", ".join(n.split()[0] for n in c["detail"]["mutual_names"])
-                            if c["detail"]["mutual_names"]
-                            else None
-                        ),
-                        c["detail"]["trip_reason"],
-                        c["detail"]["fit_reason"],
-                    ]
-                    if f
-                ],
+                # Only what fired. A row of zeros is a list of things to not
+                # mention, and naming them is how they get mentioned.
+                "signals": {k: v for k, v in c["signals"].items() if v > 0},
+                "true_facts": facts_by_id[c["need_id"]],
             }
             for c in candidates
         ],
@@ -569,8 +762,11 @@ async def suggest_favors(conn: asyncpg.Connection, helper_id: str, limit: int = 
             continue
 
         # Every name/number in the model's text must trace back to the facts.
+        # The facts themselves are included: the template sentence only ever
+        # uses the top two, so a name from the third was being rejected.
         allowed = " ".join([
             c["needer_name"], c["body"], c["ask"], c["template_reason"],
+            c["title"] or "", " ".join(facts_by_id[c["need_id"]]),
             " ".join(c["detail"]["mutual_names"]), c["detail"]["trip_reason"] or "",
             helper["display_name"] if helper else "",
         ])
