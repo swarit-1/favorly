@@ -1,6 +1,6 @@
 // DEV BYPASS: pick a seeded Supabase Auth account and become them. The account
 // is real (fake @favorly.test email, shared dev password) so the token is a
-// real JWT — you just don't have to type the password. Delete this file (and
+// real JWT, you just don't have to type the password. Delete this file (and
 // the `Dev login` entry on AuthStartScreen) once real auth is wired up.
 
 import 'package:flutter/material.dart';
@@ -43,7 +43,7 @@ class _DevLoginScreenState extends ConsumerState<DevLoginScreen> {
     super.dispose();
   }
 
-  /// Point the app at a different API without rebuilding — paste a tunnel or
+  /// Point the app at a different API without rebuilding. Paste a tunnel or
   /// deployed URL here and it persists across launches.
   Future<void> _applyServer() async {
     await ApiConfig.set(_server.text);
@@ -122,7 +122,7 @@ class _DevLoginScreenState extends ConsumerState<DevLoginScreen> {
               children: [
                 Text(
                   'Become anyone in the circle. These are real Supabase Auth '
-                  'accounts with fake emails — the password is filled in for you.',
+                  'accounts with fake emails. The password is filled in for you.',
                   style: FType.bodySmall.copyWith(color: FColors.inkSecondary),
                 ),
                 const SizedBox(height: FSpace.xxl),
@@ -186,7 +186,7 @@ class _DevLoginScreenState extends ConsumerState<DevLoginScreen> {
                   autofillHints: const [AutofillHints.email],
                   decoration: InputDecoration(
                     hintText: 'maya.chen@favorly.test',
-                    helperText: 'A name works too — "Maya Chen".',
+                    helperText: 'A name works too, like "Maya Chen".',
                     helperStyle: FType.caption.copyWith(
                       color: FColors.inkTertiary,
                     ),

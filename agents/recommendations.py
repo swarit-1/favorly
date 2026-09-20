@@ -111,7 +111,7 @@ def _trip_signal(trip: dict | None, need_body: str) -> tuple[float, str | None]:
     when = _describe_when(trip["depart_at"])
     store = trip["store"]
     if store and store.lower() in need_body.lower():
-        return 1.0, f"you're going to {store} {when} — the store they asked for"
+        return 1.0, f"you're going to {store} {when}, the store they asked for"
     return 0.7, f"you're already going to {store} {when}"
 
 
@@ -207,11 +207,11 @@ def _claim_label(c: dict) -> str:
 
 
 def _affinity(helper_claims: list[dict], needer_claims: list[dict], need_body: str) -> tuple[float, str | None]:
-    """Similar-datapoint signal — the competence version of homophily. A
+    """Similar-datapoint signal, the competence version of homophily. A
     gluten-free helper shopping a gluten-free ask buys the right bread on the
     first try; same for keto, vegan, budget shoppers. Complements _fit (which
     is about who *can* help): affinity is about who helps *well*. Mobility is
-    deliberately excluded — two carless people matching helps no one."""
+    deliberately excluded: two carless people matching helps no one."""
     helper = {_claim_label(c) for c in helper_claims if c.get("kind") in _AFFINITY_KINDS}
     needer = {_claim_label(c) for c in needer_claims if c.get("kind") in _AFFINITY_KINDS}
     helper.discard(""); needer.discard("")
@@ -270,7 +270,7 @@ def _build_reason(needer_name: str, parts: dict, detail: dict) -> str:
     lead = fragments[0][0].upper() + fragments[0][1:]
     if len(fragments) > 1:
         lead += f", and {fragments[1]}"
-    return f"{lead} — {first_name} needs {ask}."
+    return f"{lead}. {first_name} needs {ask}."
 
 
 _REASON_STOPWORDS = {
@@ -378,7 +378,44 @@ def _reciprocity_fact(needer_name: str, favor_count: int) -> str | None:
     return f"{first} picked up groceries for you {times} recently"
 
 
+# The app's copy has no dashes in it. The prompt says so, but a model that
+# slips one in shouldn't put it on someone's home screen, so it is stripped on
+# the way out rather than trusted on the way in.
+_DASHES = {"\u2014": ", ", "\u2013": ", ", "\u2012": ", "}
+
+
+def strip_dashes(text: str) -> str:
+    for dash, replacement in _DASHES.items():
+        text = text.replace(f" {dash} ", replacement).replace(dash, replacement)
+    return " ".join(text.split()).replace(" ,", ",")
+
+
+def _why(c: dict) -> dict:
+    """The structured version of the reason: the same facts `_build_reason`
+    turns into a sentence, kept separate so a client can draw them instead of
+    parsing prose. Every field is derived, never model-written -- the model
+    only ever phrases `reason`, and this is what it was phrasing from.
+
+    `weights` rides along so the client can show a signal's contribution
+    (weight x value) without hardcoding a copy of WEIGHTS that silently drifts
+    when the scoring is retuned."""
+    detail = c["detail"]
+    return {
+        "weights": WEIGHTS,
+        "mutual_names": detail["mutual_names"],
+        "favor_count": detail["favor_count"],
+        "trip_reason": detail["trip_reason"],
+        "fit_reason": detail["fit_reason"],
+        "affinity_reason": detail["affinity_reason"],
+        # The template sentence the graph alone would have produced. When the
+        # model wrote `reason`, this is what it replaced -- worth showing side
+        # by side in a "how this was decided" view.
+        "graph_reason": c["template_reason"],
+    }
+
+
 def _as_suggestion(c: dict, *, title: str, action: str, reason: str, effort: str) -> dict:
+    title, action, reason = (strip_dashes(t) for t in (title, action, reason))
     return {
         "need_id": c["need_id"],
         "title": title,
@@ -389,6 +426,7 @@ def _as_suggestion(c: dict, *, title: str, action: str, reason: str, effort: str
         "effort": effort,
         "score": c["score"],
         "signals": c["signals"],
+        "why": _why(c),
         "posted": c["posted"],
     }
 

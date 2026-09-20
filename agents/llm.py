@@ -145,6 +145,10 @@ Rules:
 - `action`: one short line describing what they'd actually do.
 - `reason`: one sentence, under 25 words, saying why this person specifically.
   Never imply debt or obligation -- no "you owe them" or "pay it back".
+- Never use em dashes or en dashes. Use commas, colons or full stops.
+- The favor is the occasion; the connection between two neighbors is the
+  point. Frame each one as one person showing up for another, not as a task
+  being dispatched. You are pointing, not deciding for them.
 - Be concrete, not vague. Use the specifics you were given: name the mutual
   connection ("you both know Maya") rather than saying "mutual friends"; name
   the store; say what they actually asked for. A specific reason is the whole

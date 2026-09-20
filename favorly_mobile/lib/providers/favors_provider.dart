@@ -4,22 +4,36 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/trellis_client.dart';
+import '../util/format.dart';
 
 /// How long a cached list is trusted before it counts as stale. Stale data is
-/// still shown instantly — staleness only tells the UI it is looking at
+/// still shown instantly, staleness only tells the UI it is looking at
 /// yesterday's news while the refresh lands.
 const Duration kFavorsStaleAfter = Duration(minutes: 10);
 
 /// Cache key for one person's last successful recommendation list.
 String favorsCacheKey(String personId) => 'favors_cache_$personId';
 
+/// What you get back for trying to take a second favor on.
+const String kOneAtATime =
+    'One favor at a time. Wrap up the one you are on first.';
+
 class FavorsState {
+  /// Open favors waiting for someone, best first.
   final List<FavorSuggestion> favors;
 
-  /// Needs I have claimed and not yet finished.
-  final Set<String> startedNeedIds;
+  /// The one favor you are on the hook for right now, if any.
+  ///
+  /// One at a time on purpose: a favor is a thread between two people, and
+  /// two half-finished threads are worth less than one you actually follow
+  /// through on.
+  final FavorSuggestion? active;
 
-  /// True only when there is nothing to show yet — a cached list means no spinner.
+  /// When you took [active] on, when this device is the one that took it.
+  /// Null after a fresh install that found the claim on the server instead.
+  final DateTime? activeStartedAt;
+
+  /// True only when there is nothing to show yet: a cached list means no spinner.
   final bool isLoading;
 
   /// A refresh running underneath a list that is already on screen.
@@ -31,12 +45,21 @@ class FavorsState {
 
   const FavorsState({
     this.favors = const [],
-    this.startedNeedIds = const {},
+    this.active,
+    this.activeStartedAt,
     this.isLoading = false,
     this.isRefreshing = false,
     this.error,
     this.fetchedAt,
   });
+
+  bool get hasActive => active != null;
+
+  /// Is this the favor you are currently on?
+  bool isActive(String needId) => active?.needId == needId;
+
+  /// Can this favor be taken on, or is your plate full?
+  bool canStart(String needId) => active == null || isActive(needId);
 
   /// Older than [kFavorsStaleAfter].
   ///
@@ -49,11 +72,14 @@ class FavorsState {
     return DateTime.now().difference(at) >= kFavorsStaleAfter;
   }
 
-  /// [error] and [fetchedAt] follow the app's copyWith convention: pass them to
-  /// set them, leave them out to clear [error]; [fetchedAt] is kept when omitted.
+  /// [error] follows the app's copyWith convention: pass it to set it, leave
+  /// it out to clear it. [active] is nullable in its own right, so it takes
+  /// [clearActive] rather than reading a missing argument as "set to null".
   FavorsState copyWith({
     List<FavorSuggestion>? favors,
-    Set<String>? startedNeedIds,
+    FavorSuggestion? active,
+    DateTime? activeStartedAt,
+    bool clearActive = false,
     bool? isLoading,
     bool? isRefreshing,
     String? error,
@@ -61,7 +87,9 @@ class FavorsState {
   }) {
     return FavorsState(
       favors: favors ?? this.favors,
-      startedNeedIds: startedNeedIds ?? this.startedNeedIds,
+      active: clearActive ? null : (active ?? this.active),
+      activeStartedAt:
+          clearActive ? null : (activeStartedAt ?? this.activeStartedAt),
       isLoading: isLoading ?? this.isLoading,
       isRefreshing: isRefreshing ?? this.isRefreshing,
       error: error,
@@ -70,15 +98,20 @@ class FavorsState {
   }
 }
 
-/// What a cache read produced: an empty list and a null timestamp when there
-/// was nothing to read, or storage itself was unavailable.
+/// What a cache read produced: empty when there was nothing to read, or
+/// storage itself was unavailable.
 class _CachedFavors {
-  const _CachedFavors(this.favors, this.fetchedAt);
+  const _CachedFavors(this.favors, this.fetchedAt,
+      {this.active, this.activeStartedAt});
 
   final List<FavorSuggestion> favors;
   final DateTime? fetchedAt;
+  final FavorSuggestion? active;
+  final DateTime? activeStartedAt;
 
-  bool get isEmpty => favors.isEmpty;
+  static const empty = _CachedFavors([], null);
+
+  bool get isEmpty => favors.isEmpty && active == null;
 }
 
 class FavorsNotifier extends StateNotifier<FavorsState> {
@@ -96,6 +129,8 @@ class FavorsNotifier extends StateNotifier<FavorsState> {
         hasSomethingToShow = true;
         state = state.copyWith(
           favors: cached.favors,
+          active: cached.active,
+          activeStartedAt: cached.activeStartedAt,
           isLoading: false,
           isRefreshing: true,
           fetchedAt: cached.fetchedAt,
@@ -111,25 +146,34 @@ class FavorsNotifier extends StateNotifier<FavorsState> {
 
     try {
       final favors = await TrellisClient.recommendations(personId);
-      // A failure here shouldn't sink the recommendations — the list is the
-      // point, "already started" is a decoration on it.
-      Set<String> started;
+      // A failure here shouldn't sink the recommendations: the list is the
+      // point, and the favor you are on is drawn from the cache anyway.
+      List<ClaimedFavor>? claimed;
       try {
-        started = await TrellisClient.needIdsClaimedBy(personId);
+        claimed = await TrellisClient.claimedBy(personId);
       } catch (_) {
-        started = state.startedNeedIds;
+        claimed = null;
       }
 
       final fetchedAt = DateTime.now();
       if (!mounted) return;
-      state = state.copyWith(
-        favors: favors,
-        startedNeedIds: started,
-        isLoading: false,
-        isRefreshing: false,
+
+      final active = claimed == null
+          ? state.active
+          : _reconcileActive(claimed, favors);
+      final startedAt =
+          active?.needId == state.active?.needId ? state.activeStartedAt : null;
+
+      state = FavorsState(
+        // The favor you are on lives in the hero, never twice on one screen.
+        // The server already leaves claimed needs out of recommendations; this
+        // is only here so a stale list cannot put it back.
+        favors: favors.where((f) => f.needId != active?.needId).toList(),
+        active: active,
+        activeStartedAt: startedAt,
         fetchedAt: fetchedAt,
       );
-      await _writeCache(personId, favors, fetchedAt);
+      await _writeCache(personId);
     } catch (e) {
       if (!mounted) return;
       // Keep whatever is on screen. A stale list plus a warning beats a blank one.
@@ -141,37 +185,81 @@ class FavorsNotifier extends StateNotifier<FavorsState> {
     }
   }
 
-  /// Claim the favor. Shows as started right away and rolls back if the
-  /// server disagrees.
-  Future<void> start(String needId, String personId) async {
-    if (state.startedNeedIds.contains(needId)) return;
-    final before = state.startedNeedIds;
-    state = state.copyWith(startedNeedIds: {...before, needId});
+  /// The server says which need you are on; this picks the best description of
+  /// it. The recommendation that first surfaced the favor carries the model's
+  /// framing and their exact words, so it wins over the bare need row, which
+  /// is only a fallback for a device that never saw the recommendation.
+  FavorSuggestion? _reconcileActive(
+    List<ClaimedFavor> claimed,
+    List<FavorSuggestion> fresh,
+  ) {
+    if (claimed.isEmpty) return null;
+    final need = claimed.first;
 
-    try {
-      await TrellisClient.claim(needId: needId, personId: personId);
-    } catch (e) {
-      if (!mounted) return;
-      state = state.copyWith(startedNeedIds: before, error: e.toString());
+    for (final known in [
+      if (state.active != null) state.active!,
+      ...state.favors,
+      ...fresh,
+    ]) {
+      if (known.needId == need.needId) return known;
     }
+    return need.toSuggestion(posted: agoLabel(need.createdAt));
   }
 
-  /// Mark the favor done. It leaves [FavorsState.startedNeedIds] on success.
-  Future<void> finish(String needId) async {
-    final before = state.startedNeedIds;
+  /// Take the favor on. Shows as yours right away and rolls back if the
+  /// server disagrees.
+  ///
+  /// Refused outright while another favor is open: [FavorsState.active] is
+  /// one favor, not a queue.
+  Future<void> start(FavorSuggestion favor, String personId) async {
+    if (state.isActive(favor.needId)) return;
+    if (state.hasActive) {
+      state = state.copyWith(error: kOneAtATime);
+      return;
+    }
+
     state = state.copyWith(
-      startedNeedIds: before.where((id) => id != needId).toSet(),
+      active: favor,
+      activeStartedAt: DateTime.now(),
+      // Taking it on pulls it out of the open list: it is no longer waiting
+      // for someone, it is waiting on you.
+      favors: state.favors.where((f) => f.needId != favor.needId).toList(),
     );
 
     try {
-      await TrellisClient.fulfill(needId: needId);
+      await TrellisClient.claim(needId: favor.needId, personId: personId);
+      await _writeCache(personId);
     } catch (e) {
       if (!mounted) return;
-      state = state.copyWith(startedNeedIds: before, error: e.toString());
+      state = state.copyWith(
+        clearActive: true,
+        favors: [favor, ...state.favors],
+        error: e.toString(),
+      );
     }
   }
 
-  /// Rate a finished favor. Nothing to roll back — only the error surfaces.
+  /// Mark the favor done. Your plate is clear again on success.
+  Future<void> finish(String needId, {String? personId}) async {
+    final before = state.active;
+    final beforeStartedAt = state.activeStartedAt;
+    if (before?.needId == needId) state = state.copyWith(clearActive: true);
+
+    try {
+      await TrellisClient.fulfill(needId: needId);
+      if (personId != null) await _writeCache(personId);
+    } catch (e) {
+      if (!mounted) return;
+      state = state.copyWith(
+        active: before,
+        activeStartedAt: beforeStartedAt,
+        error: e.toString(),
+      );
+    }
+  }
+
+  /// Say how it went with the person you helped. Nothing to roll back, only
+  /// the error surfaces.
   Future<void> submitReview({
     required String needId,
     required String reviewerId,
@@ -201,37 +289,46 @@ class FavorsNotifier extends StateNotifier<FavorsState> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(favorsCacheKey(personId));
-      if (raw == null || raw.isEmpty) return const _CachedFavors([], null);
+      if (raw == null || raw.isEmpty) return _CachedFavors.empty;
 
       final decoded = jsonDecode(raw);
-      if (decoded is! Map) return const _CachedFavors([], null);
+      if (decoded is! Map) return _CachedFavors.empty;
       final list = decoded['favors'];
-      if (list is! List) return const _CachedFavors([], null);
+      final favors = list is List
+          ? list
+              .whereType<Map>()
+              .map((f) => FavorSuggestion.fromJson(Map<String, dynamic>.from(f)))
+              .toList()
+          : <FavorSuggestion>[];
 
-      final favors = list
-          .whereType<Map>()
-          .map((f) => FavorSuggestion.fromJson(Map<String, dynamic>.from(f)))
-          .toList();
-      final fetchedAt = DateTime.tryParse('${decoded['fetched_at']}');
-      return _CachedFavors(favors, fetchedAt);
+      final rawActive = decoded['active'];
+      final active = rawActive is Map
+          ? FavorSuggestion.fromJson(Map<String, dynamic>.from(rawActive))
+          : null;
+
+      return _CachedFavors(
+        favors,
+        DateTime.tryParse('${decoded['fetched_at']}'),
+        active: active,
+        activeStartedAt: DateTime.tryParse('${decoded['active_started_at']}'),
+      );
     } catch (_) {
-      // No storage, or a cache written by an older shape — refetch instead.
-      return const _CachedFavors([], null);
+      // No storage, or a cache written by an older shape: refetch instead.
+      return _CachedFavors.empty;
     }
   }
 
-  Future<void> _writeCache(
-    String personId,
-    List<FavorSuggestion> favors,
-    DateTime fetchedAt,
-  ) async {
+  Future<void> _writeCache(String personId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
         favorsCacheKey(personId),
         jsonEncode({
-          'favors': favors.map((f) => f.toJson()).toList(),
-          'fetched_at': fetchedAt.toIso8601String(),
+          'favors': state.favors.map((f) => f.toJson()).toList(),
+          'fetched_at':
+              (state.fetchedAt ?? DateTime.now()).toIso8601String(),
+          'active': state.active?.toJson(),
+          'active_started_at': state.activeStartedAt?.toIso8601String(),
         }),
       );
     } catch (_) {

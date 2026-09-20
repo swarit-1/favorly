@@ -54,12 +54,12 @@ class TripHero extends StatelessWidget {
           const Positioned(
             right: -70,
             top: -100,
-            child: _Orb(size: 230, opacity: 0.12),
+            child: Orb(size: 230, opacity: 0.12),
           ),
           const Positioned(
             right: 30,
             bottom: -140,
-            child: _Orb(size: 210, opacity: 0.08),
+            child: Orb(size: 210, opacity: 0.08),
           ),
           Padding(
             padding: const EdgeInsets.all(20),
@@ -126,27 +126,6 @@ class TripHero extends StatelessWidget {
       onTap: onTap,
       label: onTap == null ? null : '${trip.store} trip, $_status',
       child: card,
-    );
-  }
-}
-
-class _Orb extends StatelessWidget {
-  const _Orb({required this.size, required this.opacity});
-
-  final double size;
-  final double opacity;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: FColors.canvas.withValues(alpha: opacity),
-        ),
-      ),
     );
   }
 }

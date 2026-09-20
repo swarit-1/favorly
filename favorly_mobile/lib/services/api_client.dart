@@ -7,7 +7,7 @@ import 'api_config.dart';
 /// build time with `--dart-define=API_BASE_URL=https://your-host`.
 String get apiBaseUrl => ApiConfig.baseUrl;
 
-/// A connection failure says which URL it tried — "SocketException" on its own
+/// A connection failure says which URL it tried: "SocketException" on its own
 /// sends you hunting. On a physical device the default `localhost` is the
 /// phone, not your Mac; pass `--dart-define=API_BASE_URL=http://<mac-ip>:8000`.
 Never _unreachable(Object error) {
@@ -18,7 +18,7 @@ Never _unreachable(Object error) {
   );
 }
 
-/// The server has `/auth/dev/*` switched off — it isn't running with
+/// The server has `/auth/dev/*` switched off, so it isn't running with
 /// ENVIRONMENT=development. Expected against the deployed API, where the
 /// bypass is deliberately disabled so a public URL can't log in as anyone.
 class DevBypassUnavailable implements Exception {
@@ -28,7 +28,7 @@ class DevBypassUnavailable implements Exception {
 
   @override
   String toString() =>
-      'The dev bypass is off on $baseUrl — sign in with an email and password.';
+      'The dev bypass is off on $baseUrl. Sign in with an email and password.';
 }
 
 /// Decode a response body that is supposed to be JSON.
@@ -41,7 +41,7 @@ dynamic _decodeJson(http.Response response, String what) {
   if (!type.contains('json')) {
     throw Exception(
       '$what: $apiBaseUrl returned ${response.statusCode} $type, not JSON.\n'
-      'If that is a Vercel deployment URL it is SSO-protected — use the '
+      'If that is a Vercel deployment URL it is SSO-protected, so use the '
       'project alias instead.',
     );
   }
@@ -112,7 +112,7 @@ class ApiClient {
     }
   }
 
-  /// Log in as whoever matches [name] — an email, an exact name, else a substring.
+  /// Log in as whoever matches [name]: an email, an exact name, else a substring.
   /// Returns a real Supabase JWT.
   static Future<Map<String, dynamic>> devLogin({required String name}) async {
     final response = await http.post(

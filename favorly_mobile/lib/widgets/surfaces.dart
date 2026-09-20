@@ -478,3 +478,26 @@ class StatusPill extends StatelessWidget {
     );
   }
 }
+
+/// Soft light blob behind the blue hero. Purely decorative, so it never takes
+/// a hit test or a semantics node.
+class Orb extends StatelessWidget {
+  const Orb({super.key, required this.size, required this.opacity});
+
+  final double size;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: FColors.canvas.withValues(alpha: opacity),
+        ),
+      ),
+    );
+  }
+}

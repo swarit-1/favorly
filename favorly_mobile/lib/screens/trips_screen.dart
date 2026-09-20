@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/auth_provider.dart';
 import '../providers/favors_provider.dart';
+import '../services/trellis_client.dart';
 import '../state/demo_store.dart';
 import '../theme/tokens.dart';
 import '../util/format.dart';
@@ -12,16 +13,24 @@ import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
 import '../widgets/error_panel.dart';
 import '../widgets/favor_card.dart';
+import '../widgets/favor_hero.dart';
 import '../widgets/page.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/trip_hero.dart';
 import 'add_list_screen.dart';
 import 'favor_detail_screen.dart';
+import 'favor_finish_sheet.dart';
 import 'post_trip_screen.dart';
 import 'settlement_screen.dart';
 import 'shopping_screen.dart';
 import 'trip_detail_screen.dart';
 
+/// Home: who needs you, and who you are already helping.
+///
+/// The screen reads top to bottom as one sentence about people. A greeting, at
+/// most one saturated card for the thing in flight, then the neighbors you
+/// could show up for. Trips are the machinery underneath that, so they sit at
+/// the bottom as a quiet list rather than competing for the same surface.
 class TripsScreen extends ConsumerWidget {
   const TripsScreen({super.key});
 
@@ -36,37 +45,52 @@ class TripsScreen extends ConsumerWidget {
     final active = store.activeTrip;
     final recent = store.recentTrips;
 
+    // The one favor you are on owns the blue box. It is the only thing in the
+    // app someone is waiting on you for, so nothing outranks it, not even a
+    // trip you are running yourself.
+    final myFavor = ref.watch(favorsProvider.select((s) => s.active));
+    final startedAt =
+        ref.watch(favorsProvider.select((s) => s.activeStartedAt));
+    final waitingCount = ref.watch(favorsProvider.select((s) => s.favors.length));
+
+    // The trip only shows up in the list when the favor has taken the hero;
+    // otherwise it is already the blue box and printing it twice says nothing.
+    final tripRows = [
+      if (myFavor != null && active != null) active,
+      ...recent.take(3),
+    ];
+
     return FavorlyPage(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       children: [
-        Row(
-          children: [
-            const _CircleTag(label: 'Your Circle'),
-            const Spacer(),
-            Pressable(
-              label: 'Your profile',
-              onTap: () => ref.read(tabProvider.notifier).state = 2,
-              child: const Icon(CupertinoIcons.person_circle, size: 36),
-            ),
-          ],
-        ),
-        const SizedBox(height: 22),
         Text('${greeting(DateTime.now())}, $firstName', style: FType.title),
-        const SizedBox(height: 20),
-        if (active == null)
-          const EmptyState(
-            icon: CupertinoIcons.cart,
-            title: 'No trips yet',
-            body: 'Heading to a store? Post the trip and neighbors can add a few items.',
-          )
+        // One quiet line, and only when it tells you something you cannot see
+        // yet: how many people are waiting further down.
+        if (myFavor == null && waitingCount > 0) ...[
+          const SizedBox(height: 6),
+          Text(
+            '${plural(waitingCount, 'neighbor')} nearby could use a hand.',
+            style: FType.body.copyWith(color: FColors.inkSecondary),
+          ),
+        ],
+        const SizedBox(height: FSpace.xxl),
+        if (myFavor != null)
+          _ActiveFavor(favor: myFavor, startedAt: startedAt)
+        else if (active != null)
+          _ActiveTrip(trip: active)
         else
-          _ActiveTrip(trip: active),
+          const EmptyState(
+            icon: CupertinoIcons.person_2,
+            title: 'Nobody waiting on you',
+            body: 'Take on one favor at a time. Whoever you are helping shows '
+                'up here with everything you need to finish it.',
+          ),
         const _RecommendedFavors(),
-        if (recent.isNotEmpty) ...[
-          const SectionHeader('Recent'),
+        if (tripRows.isNotEmpty) ...[
+          const SectionHeader('Trips'),
           Panel(
             dividerIndent: 68,
-            children: [for (final t in recent) _TripRow(trip: t)],
+            children: [for (final t in tripRows) _TripRow(trip: t)],
           ),
         ],
       ],
@@ -79,10 +103,38 @@ class TripsScreen extends ConsumerWidget {
   }
 }
 
-/// Favors the agent service thinks this person should consider doing.
+/// The favor you are on, in the blue box: who you are helping, what they
+/// asked for, and the one way to close it out.
+class _ActiveFavor extends StatelessWidget {
+  const _ActiveFavor({required this.favor, this.startedAt});
+
+  final FavorSuggestion favor;
+  final DateTime? startedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = favor.requesterName.isEmpty
+        ? 'them'
+        : favor.requesterName.split(' ').first;
+
+    return FavorHero(
+      favor: favor,
+      startedAt: startedAt,
+      onTap: () => push(context, FavorDetailScreen(favor: favor)),
+      action: FButton(
+        label: 'Wrap up with $name',
+        kind: FButtonKind.onAccent,
+        icon: CupertinoIcons.checkmark_alt,
+        onPressed: () => showFavorFinishSheet(context, favor: favor),
+      ),
+    );
+  }
+}
+
+/// Neighbors the agent thinks you are well placed to help.
 ///
 /// Cached, so opening the app shows the last list immediately and refreshes
-/// behind it — a recommendation call goes through an LLM and is too slow to
+/// behind it: a recommendation call goes through an LLM and is too slow to
 /// block the home screen on.
 class _RecommendedFavors extends ConsumerStatefulWidget {
   const _RecommendedFavors();
@@ -110,13 +162,19 @@ class _RecommendedFavorsState extends ConsumerState<_RecommendedFavors> {
 
     if (userId == null) return const SizedBox.shrink();
 
+    final busy = state.hasActive;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // The header carries the whole frame: who these people are, and the
+        // one control that acts on them. What Trellis is and is not belongs on
+        // the favor itself, where you are actually deciding.
+        //
         // SectionHeader already lays out a title plus an action; wrapping it
         // in another Row leaves its Expanded with unbounded width.
         SectionHeader(
-          'Favors for you',
+          busy ? 'After this one' : 'Who needs you',
           action: state.isRefreshing ? 'Refreshing...' : 'Refresh',
           onAction: state.isRefreshing
               ? null
@@ -131,18 +189,18 @@ class _RecommendedFavorsState extends ConsumerState<_RecommendedFavors> {
         else if (state.favors.isEmpty)
           const EmptyState(
             icon: CupertinoIcons.hand_thumbsup,
-            title: 'Nothing to pick up yet',
-            body: 'When a neighbor posts something they need, the ones worth '
-                'your while show up here.',
+            title: 'Nobody needs a hand right now',
+            body: 'When someone nearby asks, the people you are best placed to '
+                'show up for land here.',
           )
         else
           Panel(
-            dividerIndent: 68,
+            dividerIndent: 74,
             children: [
               for (final favor in state.favors)
                 FavorCard(
                   favor: favor,
-                  started: state.startedNeedIds.contains(favor.needId),
+                  waiting: busy,
                   onTap: () =>
                       push(context, FavorDetailScreen(favor: favor)),
                 ),
@@ -152,31 +210,6 @@ class _RecommendedFavorsState extends ConsumerState<_RecommendedFavors> {
         // silently showing stale data.
         if (state.error != null) ErrorPanel(state.error),
       ],
-    );
-  }
-}
-
-class _CircleTag extends StatelessWidget {
-  const _CircleTag({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
-      decoration: BoxDecoration(
-        color: FColors.surface,
-        borderRadius: BorderRadius.circular(FRadius.pill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(CupertinoIcons.person_2, size: 16, color: FColors.inkSecondary),
-          const SizedBox(width: 6),
-          Text(label, style: FType.captionStrong),
-        ],
-      ),
     );
   }
 }
@@ -249,7 +282,7 @@ class _TripRow extends ConsumerWidget {
     final done = trip.status == TripStatus.done;
     final who = store.isShopper(trip) ? 'you' : shopper.firstName;
     final subtitle = done
-        ? '${dayLabel(trip.departAt)} · ${plural(trip.requesterCount, 'neighbor')} · $who'
+        ? '${dayLabel(trip.departAt)} · $who'
         : '${whenLabel(trip.departAt)} · $who';
     return PanelRow(
       leading: const LeadingIcon(CupertinoIcons.cart, size: 40),

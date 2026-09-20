@@ -4,159 +4,129 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/favors_provider.dart';
 import '../services/trellis_client.dart';
 import '../theme/tokens.dart';
+import 'people.dart';
 import 'surfaces.dart';
 
 /// Plain-English name for how much a favor asks of you.
+///
+/// A word, not a meter. Three little bars only ever said what "Quick" says,
+/// and they said it on every row.
 String effortLabel(String effort) => switch (effort) {
       'low' => 'Quick',
       'high' => 'Big lift',
       _ => 'Some effort',
     };
 
-int _effortSteps(String effort) => switch (effort) {
-      'low' => 1,
-      'high' => 3,
-      _ => 2,
-    };
-
-/// Three bars and a word. Neutral on purpose: effort is a fact about the
-/// favor, not a warning, so it never borrows the attention color.
-class EffortMeter extends StatelessWidget {
-  const EffortMeter(this.effort, {super.key, this.showLabel = true});
-
-  final String effort;
-  final bool showLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final steps = _effortSteps(effort);
-    final label = effortLabel(effort);
-    return Semantics(
-      label: 'Effort: ${label.toLowerCase()}',
-      excludeSemantics: true,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 1; i <= 3; i++) ...[
-            Container(
-              width: 4,
-              height: 4 + i * 3,
-              margin: const EdgeInsets.only(right: 3),
-              decoration: BoxDecoration(
-                color: i <= steps ? FColors.inkSecondary : FColors.hairlineStrong,
-                borderRadius: BorderRadius.circular(FRadius.pill),
-              ),
-            ),
-          ],
-          if (showLabel) ...[
-            const SizedBox(width: FSpace.xs),
-            Text(label, style: FType.caption.copyWith(color: FColors.inkSecondary)),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// One recommended favor in a list: what it is, who needs it, why it reached
-/// you, and what it costs you. A summary, not a pitch — the detail screen
-/// carries the argument.
+/// One neighbor who could use a hand.
+///
+/// The person leads, their ask follows, and one line says what the two of you
+/// already have. Nothing else: this is a list you read down, and a score, a
+/// timestamp and an effort chart on every row turn five people into a
+/// spreadsheet.
 ///
 /// The card carries no border of its own: it sits inside a [Panel] with the
-/// other rows, and the in-progress tint is the only thing that breaks the
-/// white. In-progress falls back to the provider so a card is correct
-/// wherever it is dropped; pass [started] when the list already knows.
+/// other rows. It never renders the favor you are already on, that one lives
+/// in the hero at the top of the home screen. When your plate is full the card
+/// steps back to say "later", without hiding who is waiting.
 class FavorCard extends ConsumerWidget {
-  const FavorCard({super.key, required this.favor, this.started, this.onTap});
+  const FavorCard({super.key, required this.favor, this.waiting, this.onTap});
 
   final FavorSuggestion favor;
-  final bool? started;
+
+  /// Your plate is already full, so this one has to wait. Falls back to the
+  /// provider so a card is correct wherever it is dropped.
+  final bool? waiting;
+
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tracked = ref.watch(
-      favorsProvider.select((s) => s.startedNeedIds.contains(favor.needId)),
-    );
-    final inProgress = started ?? tracked;
+    final tracked = ref.watch(favorsProvider.select((s) => s.hasActive));
+    final onHold = waiting ?? tracked;
+    final ink = onHold ? FColors.inkTertiary : FColors.ink;
+    final name = favor.requesterName.isEmpty ? 'A neighbor' : favor.requesterName;
 
     return Pressable(
       onTap: onTap,
-      label: inProgress
-          ? '${favor.title}, for ${favor.requesterName}, in progress'
-          : '${favor.title}, for ${favor.requesterName}',
+      label: onHold
+          ? '$name needs ${favor.title}, waiting on your current favor'
+          : '$name needs ${favor.title}',
       child: Container(
-        padding: const EdgeInsets.all(FSpace.lg),
-        decoration: BoxDecoration(
-          color: inProgress ? FColors.blueTint : null,
-        ),
-        child: Column(
+        padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(
-                    favor.title,
-                    style: FType.bodyStrong,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (inProgress) ...[
-                  const SizedBox(width: FSpace.sm),
-                  const StatusPill(
-                    'In progress',
-                    kind: PillKind.info,
-                    icon: CupertinoIcons.arrow_2_circlepath,
-                  ),
-                ],
-              ],
+            Opacity(
+              opacity: onHold ? 0.45 : 1,
+              child: InitialsAvatar(name, size: 44),
             ),
-            const SizedBox(height: 2),
-            Text(
-              '${favor.requesterName} asked',
-              style: FType.bodySmall.copyWith(color: FColors.inkSecondary),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (favor.reason.isNotEmpty) ...[
-              const SizedBox(height: FSpace.sm),
-              Row(
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.only(top: 2),
-                    child: Icon(CupertinoIcons.sparkles, size: 14, color: FColors.blue),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      favor.reason,
-                      style: FType.caption.copyWith(color: FColors.inkSecondary),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            const SizedBox(height: FSpace.md),
-            Row(
-              children: [
-                EffortMeter(favor.effort),
-                const SizedBox(width: FSpace.md),
-                Expanded(
-                  child: Text(
-                    favor.posted,
-                    textAlign: TextAlign.right,
-                    style: FType.caption.copyWith(color: FColors.inkTertiary),
+                  Text(
+                    name,
+                    style: FType.bodyStrong.copyWith(color: ink),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    favor.title,
+                    style: FType.bodySmall.copyWith(
+                      color: onHold ? FColors.inkTertiary : FColors.inkSecondary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  // Why the two of you: the only line here that is about the
+                  // relationship rather than the errand, so it earns its space.
+                  if (favor.reason.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Icon(
+                            CupertinoIcons.sparkles,
+                            size: 12,
+                            color: onHold ? FColors.inkTertiary : FColors.blue,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            favor.reason,
+                            style: FType.caption.copyWith(
+                              color: FColors.inkTertiary,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            // A full plate is the one thing worth spelling out; otherwise the
+            // chevron is the whole call to action.
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: onHold
+                  ? Text(
+                      'Later',
+                      style: FType.caption.copyWith(color: FColors.inkTertiary),
+                    )
+                  : const Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 18,
+                      color: FColors.inkTertiary,
+                    ),
             ),
           ],
         ),

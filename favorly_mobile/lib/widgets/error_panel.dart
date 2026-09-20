@@ -5,7 +5,7 @@ import '../theme/tokens.dart';
 /// A failure message you can actually read.
 ///
 /// `InputDecoration.errorText` is a single ellipsized line, which hides exactly
-/// the part you need — the URL that failed, the status, the reason. This wraps
+/// the part you need: the URL that failed, the status, the reason. This wraps
 /// instead, and the text is selectable so it can be copied into a bug report.
 class ErrorPanel extends StatelessWidget {
   const ErrorPanel(this.message, {super.key});

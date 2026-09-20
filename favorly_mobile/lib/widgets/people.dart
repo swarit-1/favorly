@@ -46,6 +46,56 @@ class Avatar extends StatelessWidget {
   }
 }
 
+/// Initials for someone who isn't a circle [Member]: the people Trellis
+/// surfaces are known by a display name and nothing else yet. The tint is
+/// derived from the name so the same neighbor keeps the same color.
+class InitialsAvatar extends StatelessWidget {
+  const InitialsAvatar(this.name, {super.key, this.size = 32, this.onAccent = false});
+
+  final String name;
+  final double size;
+  final bool onAccent;
+
+  static String initialsOf(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
+    if (parts.isEmpty) return '?';
+    return parts.take(2).map((p) => p[0].toUpperCase()).join();
+  }
+
+  static MemberTint tintFor(String name) {
+    final values = MemberTint.values;
+    if (name.isEmpty) return values.first;
+    return values[name.codeUnits.reduce((a, b) => a + b) % values.length];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) =
+        onAccent ? (FColors.canvas, FColors.blue) : Avatar.colorsFor(tintFor(name));
+    return Semantics(
+      label: name,
+      excludeSemantics: true,
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+        child: Text(
+          initialsOf(name),
+          style: TextStyle(
+            fontFamily: FType.family,
+            fontSize: size * 0.38,
+            fontWeight: FontWeight.w700,
+            color: fg,
+            letterSpacing: -0.3,
+            height: 1,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Requester tag: avatar plus first name in a soft pill.
 class MemberChip extends StatelessWidget {
   const MemberChip(

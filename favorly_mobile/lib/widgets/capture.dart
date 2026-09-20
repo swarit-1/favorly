@@ -328,7 +328,7 @@ class MockReceipt extends StatelessWidget {
               for (final l in split.lines) line(l.description, l.total.toStringAsFixed(2)),
               const SizedBox(height: 4),
               Text(
-                '— — — — — — — — — — — —',
+                '- - - - - - - - - - - -',
                 maxLines: 1,
                 overflow: TextOverflow.clip,
                 style: style.copyWith(color: const Color(0xFF9AA3AB)),

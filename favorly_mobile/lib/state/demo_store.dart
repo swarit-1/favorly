@@ -12,6 +12,16 @@ final storeProvider =
 /// ledger after a handoff.
 final tabProvider = StateProvider<int>((ref) => 0);
 
+/// Named positions in [RootShell]'s tab bar. Screens that jump between tabs
+/// use these rather than a bare number: inserting a tab has silently sent
+/// people to the wrong screen before.
+abstract final class FTab {
+  static const trips = 0;
+  static const circle = 1;
+  static const web = 2;
+  static const you = 3;
+}
+
 class TripDraft {
   const TripDraft({
     required this.store,
@@ -490,7 +500,7 @@ class DemoStore extends ChangeNotifier {
   // Substitution (AI surface #2)
   // ---------------------------------------------------------------------------
 
-  // POST /items/{id}/substitution — shelf photo in, prompt out
+  // POST /items/{id}/substitution: shelf photo in, prompt out
   SubstitutionPrompt askForSubstitute(String tripId, String itemId) {
     final item = itemById(tripId, itemId);
     final prompt = SubstitutionPrompt(
@@ -508,7 +518,7 @@ class DemoStore extends ChangeNotifier {
     return prompt;
   }
 
-  // PATCH /substitutions/{id} — choose, skip, or timeout_skip
+  // PATCH /substitutions/{id}: choose, skip, or timeout_skip
   void resolveSubstitution(String promptId, {int? chosenIndex}) {
     final p = pendingPrompt;
     if (p == null || p.id != promptId) return;
@@ -627,7 +637,7 @@ class DemoStore extends ChangeNotifier {
   // Receipt split (AI surface #3)
   // ---------------------------------------------------------------------------
 
-  // POST /trips/{id}/receipt — image in, reconciled split out
+  // POST /trips/{id}/receipt: image in, reconciled split out
   ReceiptSplit scanReceipt(String tripId) {
     final split = buildReceipt(tripId);
     receipts[tripId] = split;

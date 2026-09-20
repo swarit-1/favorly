@@ -43,5 +43,5 @@ void main() {
       expect(res['name'], 'Maya Chen');
       expect(res['access_token'], isNotEmpty);
     });
-  }, skip: 'live network test — run with --run-skipped');
+  }, skip: 'live network test, run with --run-skipped');
 }

@@ -24,7 +24,7 @@ void main() {
     final text = tester.widget<SelectableText>(find.byType(SelectableText));
     final shown = text.data!;
 
-    // Every line survives — the URL and the reason are the useful parts.
+    // Every line survives: the URL and the reason are the useful parts.
     expect(shown, contains('http://localhost:8000'));
     expect(shown, contains('is this the right host for this device?'));
     expect(shown, contains('errno = 61'));
