@@ -62,7 +62,10 @@ _GROCERY_VERB_RE = re.compile(r"\b(grab|pick ?up|buy|bring)\b", re.IGNORECASE)
 _SHORT_REPLY_RE = re.compile(
     r"^(yes|y|yep|yeah|sure|ok|okay|i can|happy to|no|n|nope|can'?t|cannot|not today|sorry|"
     r"[1-5]|everyone|all|anyone|cancel|never ?mind|forget it|done|all done|finished|returned|"
-    r"got it back|all set|thanks,? done|do that)[.!]?$",
+    r"got it back|all set|thanks,? done|do that|"
+    # a lone word can be a shortlist first name ("elena") — the fast path only
+    # acts on it when it actually matches the shortlist, else it falls through
+    r"[a-z]{2,20})[.!]?$",
     re.IGNORECASE,
 )
 

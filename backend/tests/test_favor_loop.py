@@ -167,6 +167,16 @@ def test_full_loop(loop_env):
     # (WAIT/INVITE/ACCEPT/DONE checked above contain none)
 
 
+def test_pick_helper_by_lowercase_name(loop_env):
+    """PRD locked decision: 'A digit. Also a first name.' — 'marcus' must invite."""
+    store, fake = loop_env
+
+    run(handle_inbound(store, ASKER_PHONE, "I need to borrow a ladder for an hour today", NOW))
+    replies, notes = run(handle_inbound(store, ASKER_PHONE, "marcus", NOW))
+    assert replies == ["Asked Marcus. I will text you as soon as they answer."]
+    assert fake.invited
+
+
 def test_decline_offers_next(loop_env):
     store, fake = loop_env
     run(handle_inbound(store, ASKER_PHONE, "I need to borrow a ladder for an hour today", NOW))
