@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
-import '../theme.dart';
-import '../widgets/common.dart';
-import 'signup_screen.dart';
+import '../theme/tokens.dart';
+import '../widgets/buttons.dart';
+import '../widgets/surfaces.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -14,160 +14,155 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  late TextEditingController _emailController;
-  late TextEditingController _passwordController;
-
-  @override
-  void initState() {
-    super.initState();
-    _emailController = TextEditingController();
-    _passwordController = TextEditingController();
-  }
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _showPassword = false;
+  String? _error;
+  bool _isLoading = false;
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
+    _email.dispose();
+    _password.dispose();
     super.dispose();
+  }
+
+  bool get _canLogin =>
+      _email.text.trim().isNotEmpty && _password.text.isNotEmpty;
+
+  Future<void> _login() async {
+    if (!_canLogin) return;
+
+    setState(() => _isLoading = true);
+
+    await ref.read(authProvider.notifier).login(
+          email: _email.text.trim(),
+          password: _password.text,
+        );
+
+    if (!mounted) return;
+    final authState = ref.read(authProvider);
+    if (authState.error != null) {
+      setState(() {
+        _error = authState.error ?? 'Login failed';
+        _isLoading = false;
+      });
+    } else {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authProvider);
-    final authNotifier = ref.read(authProvider.notifier);
-
-    if (authState.userId != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.of(context).pushReplacementNamed('/');
-      });
-    }
-
-    final text = Theme.of(context).textTheme;
-
     return Scaffold(
+      backgroundColor: FColors.canvas,
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 40, 20, 28),
-          children: [
-            Text(
-              'Favorly',
-              style: text.headlineLarge?.copyWith(
-                color: AppColors.green,
-                fontSize: 40,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Neighbors helping neighbors',
-              style: text.bodyLarge?.copyWith(color: AppColors.muted),
-            ),
-            const SizedBox(height: 40),
-            _TextField(
-              label: 'Email',
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 16),
-            _TextField(
-              label: 'Password',
-              controller: _passwordController,
-              obscureText: true,
-            ),
-            const SizedBox(height: 24),
-            if (authState.error != null)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Text(
-                  authState.error!,
-                  style: TextStyle(color: Colors.red.shade700),
-                ),
-              ),
-            const SizedBox(height: 20),
-            PillButton(
-              label: authState.isLoading ? 'Logging in...' : 'Log in',
-              onPressed: authState.isLoading
-                  ? null
-                  : () async {
-                      await authNotifier.login(
-                        email: _emailController.text,
-                        password: _passwordController.text,
-                      );
-                    },
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: ListView(
+              shrinkWrap: true,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
               children: [
-                Text("Do not have an account? ", style: text.bodyMedium),
-                GestureDetector(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const SignupScreen(),
+                const SizedBox(height: 24),
+                const _Wordmark(),
+                const SizedBox(height: 12),
+                Text(
+                  'Welcome back to Favorly.',
+                  style: FType.body.copyWith(color: FColors.inkSecondary),
+                ),
+                const SizedBox(height: 36),
+                const FieldLabel('Email'),
+                TextField(
+                  controller: _email,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.email],
+                  decoration: const InputDecoration(hintText: 'your@email.com'),
+                  onChanged: (_) => setState(() => _error = null),
+                ),
+                const SizedBox(height: 18),
+                const FieldLabel('Password'),
+                TextField(
+                  controller: _password,
+                  obscureText: !_showPassword,
+                  textInputAction: TextInputAction.done,
+                  autofillHints: const [AutofillHints.password],
+                  decoration: InputDecoration(
+                    hintText: '••••••••',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _showPassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                        color: FColors.inkTertiary,
+                      ),
+                      onPressed: () =>
+                          setState(() => _showPassword = !_showPassword),
                     ),
+                    errorText: _error,
                   ),
-                  child: Text(
-                    'Sign up',
-                    style: text.bodyMedium?.copyWith(
-                      color: AppColors.green,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  onChanged: (_) => setState(() => _error = null),
+                  onSubmitted: (_) => _login(),
+                ),
+                const SizedBox(height: 28),
+                FButton(
+                  label: _isLoading ? 'Logging in...' : 'Log in',
+                  onPressed: _canLogin && !_isLoading ? _login : null,
+                ),
+                const SizedBox(height: 14),
+                Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Don't have an account? ",
+                        style: FType.caption
+                            .copyWith(color: FColors.inkSecondary),
+                      ),
+                      GestureDetector(
+                        onTap: () =>
+                            Navigator.of(context).pop(), // Go back to start
+                        child: Text(
+                          'Sign up',
+                          style: FType.caption.copyWith(
+                            color: FColors.blue,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _TextField extends StatelessWidget {
-  const _TextField({
-    required this.label,
-    required this.controller,
-    this.keyboardType,
-    this.obscureText = false,
-  });
-
-  final String label;
-  final TextEditingController controller;
-  final TextInputType? keyboardType;
-  final bool obscureText;
+class _Wordmark extends StatelessWidget {
+  const _Wordmark();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          label,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: AppColors.ink,
-          ),
+          'Favorly',
+          style: FType.display.copyWith(fontSize: 40, letterSpacing: -1.5),
         ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          keyboardType: keyboardType,
-          obscureText: obscureText,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            filled: true,
-            fillColor: AppColors.cream,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 9),
+          child: Container(
+            width: 10,
+            height: 10,
+            decoration:
+                const BoxDecoration(color: FColors.blue, shape: BoxShape.circle),
           ),
         ),
       ],
