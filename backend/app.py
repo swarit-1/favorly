@@ -67,9 +67,21 @@ app = FastAPI(
 
 
 # Add CORS middleware
+def get_allowed_origins() -> list[str]:
+    """Get CORS allowed origins from environment or default based on environment."""
+    cors_origins = os.getenv("CORS_ALLOWED_ORIGINS")
+    if cors_origins:
+        return [origin.strip() for origin in cors_origins.split(",")]
+    # Default: allow all origins in development, none in production
+    env = os.getenv("ENVIRONMENT", "development")
+    if env == "development":
+        return ["*"]
+    return []
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For demo; restrict in production
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -197,6 +209,27 @@ async def get_circle_ledger(circle_id: str):
 # CUSTOM OPENAPI SCHEMA (for TypeScript generation)
 # ============================================================================
 
+def get_openapi_servers() -> list[dict]:
+    """Get OpenAPI server URLs from environment."""
+    servers = []
+
+    # Add development server
+    dev_server = os.getenv("DEV_SERVER_URL", "http://localhost:8000")
+    if dev_server:
+        servers.append({"url": dev_server, "description": "Development"})
+
+    # Add production server if configured
+    prod_server = os.getenv("PROD_SERVER_URL")
+    if prod_server:
+        servers.append({"url": prod_server, "description": "Production"})
+
+    # If no servers configured, default to localhost
+    if not servers:
+        servers.append({"url": "http://localhost:8000", "description": "Development"})
+
+    return servers
+
+
 def custom_openapi():
     """Generate OpenAPI schema."""
     if app.openapi_schema:
@@ -209,11 +242,8 @@ def custom_openapi():
         routes=app.routes,
     )
 
-    # Add server URLs
-    openapi_schema["servers"] = [
-        {"url": "http://localhost:8000", "description": "Development"},
-        {"url": "https://favorly-api.fly.dev", "description": "Production"},
-    ]
+    # Add server URLs from environment
+    openapi_schema["servers"] = get_openapi_servers()
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema

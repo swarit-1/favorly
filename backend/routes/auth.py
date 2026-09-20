@@ -3,21 +3,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
 from uuid import UUID
-import os
-from supabase import create_client, Client
+
+from db.client import get_supabase_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def get_supabase_client() -> Client:
-    """Get Supabase client."""
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
-    print(f"🔑 URL: {url[:50]}...")
-    print(f"🔑 KEY: {key[:20]}...")
-    return create_client(url, key)
 
 
 class SignupRequest(BaseModel):

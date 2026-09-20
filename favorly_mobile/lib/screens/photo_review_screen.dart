@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/vision_provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/vision_api_client.dart';
+import '../services/api_config.dart';
 
 class PhotoReviewScreen extends ConsumerStatefulWidget {
   const PhotoReviewScreen({
@@ -34,15 +36,17 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
     });
 
     try {
-      // Get auth token from auth provider
-      // For now, use a placeholder
-      const authToken = 'placeholder_token';
-      const baseUrl = 'http://localhost:8000';
-      const userId = 'placeholder_user_id';
+      // Get auth credentials from auth provider
+      final authState = ref.read(authProvider);
+      final baseUrl = ApiConfig.baseUrl;
+
+      if (authState.user == null || authState.accessToken == null) {
+        throw Exception('Not authenticated');
+      }
 
       final apiClient = VisionApiClient(
         baseUrl: baseUrl,
-        authToken: authToken,
+        authToken: authState.accessToken!,
       );
 
       final imageFiles = widget.photos
@@ -56,33 +60,33 @@ class _PhotoReviewScreenState extends ConsumerState<PhotoReviewScreen> {
         case 'grocery_shopping':
           analysisResult = await apiClient.analyzePantry(
             imageFiles,
-            userId: userId,
+            userId: authState.user!.id,
           );
           break;
         case 'home_repair':
           analysisResult = await apiClient.analyzeDamage(
             imageFiles,
-            userId: userId,
+            userId: authState.user!.id,
             roomOrArea: null,
           );
           break;
         case 'yard_work':
           analysisResult = await apiClient.analyzeYardMaintenance(
             imageFiles,
-            userId: userId,
+            userId: authState.user!.id,
           );
           break;
         case 'pet_sitting':
           analysisResult = await apiClient.assessPet(
             imageFiles,
-            userId: userId,
+            userId: authState.user!.id,
             petInfo: {},
           );
           break;
         case 'cleaning':
           analysisResult = await apiClient.analyzeCleaningNeeds(
             imageFiles,
-            userId: userId,
+            userId: authState.user!.id,
             roomType: null,
           );
           break;

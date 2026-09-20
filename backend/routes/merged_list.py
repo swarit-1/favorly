@@ -5,9 +5,8 @@ from typing import List, Dict
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
-import os
-from supabase import create_client, Client
 
+from db.client import get_supabase_client
 from shared.contracts.models import (
     MergedList,
     MergedListRow,
@@ -17,19 +16,14 @@ from shared.contracts.models import (
     STORE_SECTION_ORDER,
     User,
     RequestStatus,
+    TripCaps,
 )
 from shared.timestamps import parse_timestamp
 
 router = APIRouter(prefix="/trips", tags=["merged_list"])
 
-
-def get_supabase_client() -> Client:
-    """Get Supabase client."""
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
-    return create_client(url, key)
+# Default trip caps (matches TripCaps model defaults)
+DEFAULT_CAPS = TripCaps()
 
 
 @router.get("/{trip_id}/merged-list", response_model=MergedList)
@@ -88,7 +82,7 @@ async def get_merged_list(trip_id: UUID):
                 # Calculate running total and cap
                 max_price = Decimal(str(item.max_price)) if item.max_price else Decimal("5.00")
                 running_total += max_price
-                cap = Decimal("40.00")  # Default cap
+                cap = Decimal(str(DEFAULT_CAPS.max_dollars_per_person))
                 over_cap = running_total > cap
 
                 # Get trip caps if different

@@ -5,22 +5,12 @@ from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
-import os
-from supabase import create_client, Client
 
+from db.client import get_supabase_client
 from shared.contracts.models import Request as RequestModel, RequestStatus, Item, ItemStatus, StoreSection
 from shared.timestamps import parse_timestamp
 
 router = APIRouter(prefix="/requests", tags=["requests"])
-
-
-def get_supabase_client() -> Client:
-    """Get Supabase client."""
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
-    return create_client(url, key)
 
 
 class CreateItemRequest(BaseModel):
