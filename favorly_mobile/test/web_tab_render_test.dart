@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:favorly_mobile/models/favor_category.dart';
+import 'package:favorly_mobile/providers/asks_provider.dart';
 import 'package:favorly_mobile/providers/auth_provider.dart';
 import 'package:favorly_mobile/providers/favors_provider.dart';
 import 'package:favorly_mobile/providers/graph_provider.dart';
@@ -190,4 +192,76 @@ void main() {
     expect(tester.takeException(), isNull);
 
   });
+
+  // v2: the degrees line under the map, and the ask's dashed path over it.
+  testWidgets('the web carries the ask path and the degrees line',
+      (tester) async {
+    tester.view.physicalSize = const Size(390 * 3, 1400 * 3);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+
+    final marcus = HelperMatch.fromJson({
+      'person': {
+        'id': 'n4',
+        'display_name': 'Marcus Hill',
+        'first_name': 'Marcus',
+      },
+      'rank': 1,
+      'tie': 'friend_of_friend',
+      'tie_label': 'Friend of Elena',
+      'hops': 2,
+      'path': [
+        {'id': 'me', 'name': 'You'},
+        {'id': 'n5', 'name': 'Elena'},
+        {'id': 'n4', 'name': 'Marcus'},
+      ],
+      'headline': 'Has a 6 ft ladder',
+      'where': '3 floors up',
+      'reason': 'Has a ladder. You both know Elena.',
+      'invite_status': 'pending',
+    });
+    final ask = MyAsk(
+      need: const ParsedNeed(
+        id: 'need-1',
+        category: FavorCategory.borrow,
+        title: 'Borrow a ladder',
+        body: 'I need to borrow a ladder for an hour today',
+      ),
+      status: 'open',
+      helpers: [marcus],
+    );
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        authProvider.overrideWith((ref) => _SeededAuth()),
+        favorsProvider.overrideWith((ref) => _SeededFavors()),
+        favorGraphProvider.overrideWith(
+          (ref, id) async => const FavorGraph(nodes: _nodes, edges: _edges),
+        ),
+        favorThreadProvider.overrideWith((ref, key) async => _thread),
+        graphStatsProvider.overrideWith((ref, id) async => const GraphStats(
+            people: 16, ties: 23, avgSeparation: 2.61, triangles: 7)),
+        asksProvider.overrideWith((ref) => _SeededAsks(ask)),
+      ],
+      child:
+          MaterialApp(theme: buildFavorlyTheme(), home: const WebScreen()),
+    ));
+    await tester.pumpAndSettle();
+
+    final view =
+        tester.widget<FavorGraphView>(find.byType(FavorGraphView));
+    // "me" in the wire path resolves to the signed-in node id.
+    expect(view.highlightPath, [_me, 'n5', 'n4']);
+    expect(view.highlightSolid, isFalse);
+    expect(find.textContaining('dashed blue path is your ask'), findsOneWidget);
+    expect(
+        find.text('Your building: 2.6 degrees apart'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _SeededAsks extends AsksNotifier {
+  _SeededAsks(MyAsk ask) {
+    state = AsksState(asks: [ask]);
+  }
 }

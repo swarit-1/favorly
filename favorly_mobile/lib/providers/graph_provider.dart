@@ -12,6 +12,13 @@ final favorGraphProvider =
   return TrellisClient.graph(personId);
 });
 
+/// The degrees-apart numbers under the web. Refreshed (invalidated) when a
+/// favor of yours is fulfilled, which is the one moment they change on stage.
+final graphStatsProvider =
+    FutureProvider.family<GraphStats, String>((ref, personId) async {
+  return TrellisClient.graphStats(personId);
+});
+
 /// One pair of neighbors, expanded. Keyed by both ids because direction
 /// matters: `given` means favors the *first* id did.
 final favorThreadProvider =

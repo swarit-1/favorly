@@ -42,6 +42,8 @@ class FavorGraphView extends StatefulWidget {
     this.selectedId,
     this.onSelect,
     this.height = 320,
+    this.highlightPath = const [],
+    this.highlightSolid = false,
   });
 
   final FavorGraph graph;
@@ -49,6 +51,14 @@ class FavorGraphView extends StatefulWidget {
   final String? selectedId;
   final ValueChanged<GraphNode?>? onSelect;
   final double height;
+
+  /// Node ids, in order, of the social path an open ask is riding: You,
+  /// whoever carries the introduction, the helper. Drawn dashed in brand
+  /// blue over the ordinary edges.
+  final List<String> highlightPath;
+
+  /// Once the favor is fulfilled the dashed possibility becomes a solid tie.
+  final bool highlightSolid;
 
   @override
   State<FavorGraphView> createState() => _FavorGraphViewState();
@@ -165,6 +175,8 @@ class _FavorGraphViewState extends State<FavorGraphView>
                   meId: widget.meId,
                   selectedId: widget.selectedId,
                   progress: Curves.easeOutCubic.transform(_reveal.value),
+                  highlightPath: widget.highlightPath,
+                  highlightSolid: widget.highlightSolid,
                 ),
               ),
             ),
@@ -297,6 +309,8 @@ class _GraphPainter extends CustomPainter {
     required this.meId,
     required this.selectedId,
     required this.progress,
+    this.highlightPath = const [],
+    this.highlightSolid = false,
   });
 
   final FavorGraph graph;
@@ -304,6 +318,8 @@ class _GraphPainter extends CustomPainter {
   final String meId;
   final String? selectedId;
   final double progress;
+  final List<String> highlightPath;
+  final bool highlightSolid;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -313,7 +329,48 @@ class _GraphPainter extends CustomPainter {
     };
 
     _paintEdges(canvas, index);
+    _paintHighlightPath(canvas, index);
     _paintNodes(canvas);
+  }
+
+  /// The ask's route through the web: dashed while it is a possibility,
+  /// solid once the favor happened and the tie is real. Painted over the
+  /// ordinary edges and under the discs, so people stay on top.
+  void _paintHighlightPath(Canvas canvas, Map<String, int> index) {
+    if (highlightPath.length < 2 || progress < 0.99) return;
+
+    final paint = Paint()
+      ..color = FColors.blue
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    for (var i = 0; i < highlightPath.length - 1; i++) {
+      final a = index[highlightPath[i]], b = index[highlightPath[i + 1]];
+      if (a == null || b == null) continue;
+      final from = positions[a], to = positions[b];
+      if (highlightSolid) {
+        canvas.drawLine(from, to, paint);
+      } else {
+        _dashedLine(canvas, from, to, paint);
+      }
+    }
+  }
+
+  void _dashedLine(Canvas canvas, Offset from, Offset to, Paint paint) {
+    const dash = 7.0, gap = 6.0;
+    final total = (to - from).distance;
+    if (total <= 0) return;
+    final dir = (to - from) / total;
+    var travelled = 0.0;
+    while (travelled < total) {
+      final end = math.min(travelled + dash, total);
+      canvas.drawLine(
+        from + dir * travelled,
+        from + dir * end,
+        paint,
+      );
+      travelled = end + gap;
+    }
   }
 
   void _paintEdges(Canvas canvas, Map<String, int> index) {
@@ -466,6 +523,8 @@ class _GraphPainter extends CustomPainter {
   bool shouldRepaint(_GraphPainter old) =>
       old.progress != progress ||
       old.selectedId != selectedId ||
+      old.highlightSolid != highlightSolid ||
+      !identical(old.highlightPath, highlightPath) ||
       !identical(old.graph, graph) ||
       !identical(old.positions, positions);
 }
