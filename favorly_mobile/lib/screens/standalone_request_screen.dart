@@ -15,7 +15,11 @@ import 'camera_screen.dart';
 
 /// Capture a shopping list independent of a trip — save for later matching.
 class StandaloneRequestScreen extends ConsumerStatefulWidget {
-  const StandaloneRequestScreen({super.key});
+  const StandaloneRequestScreen({super.key, this.initialText});
+
+  /// Pre-filled list text, e.g. the items the ask composer already parsed
+  /// out of "grab oat milk and lemons". Additive; null behaves as before.
+  final String? initialText;
 
   @override
   ConsumerState<StandaloneRequestScreen> createState() => _StandaloneRequestScreenState();
@@ -23,7 +27,7 @@ class StandaloneRequestScreen extends ConsumerStatefulWidget {
 
 class _StandaloneRequestScreenState extends ConsumerState<StandaloneRequestScreen> {
   IntakeSource _source = IntakeSource.text;
-  final _text = TextEditingController();
+  late final _text = TextEditingController(text: widget.initialText ?? '');
   String? _transcript;
   bool _captured = false;
 
