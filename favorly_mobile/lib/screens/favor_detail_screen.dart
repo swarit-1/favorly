@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/favor_category.dart';
 import '../providers/auth_provider.dart';
 import '../providers/favors_provider.dart';
 import '../services/trellis_client.dart';
@@ -27,6 +30,11 @@ const _connectionFacts = <String, (IconData, String)>{
   'mutual': (CupertinoIcons.person_2, 'You share people in common'),
   'trip': (CupertinoIcons.location, 'You were already headed that way'),
   'fit': (CupertinoIcons.hand_thumbsup, 'It is the kind of thing you do'),
+  // v2 matcher signals, same rule: a fact about the two of you, never a bar.
+  'capability': (CupertinoIcons.cube_box, 'You have what they need'),
+  'nearness': (CupertinoIcons.placemark, 'You live close by'),
+  'similarity': (CupertinoIcons.sparkles, 'You have things in common'),
+  'tie': (CupertinoIcons.link, 'You share people in common'),
 };
 
 /// First name only, the way you would say it out loud. Empty for a favor that
@@ -93,6 +101,38 @@ class _FavorDetailScreenState extends ConsumerState<FavorDetailScreen> {
     await ref.read(favorsProvider.notifier).start(_favor, userId);
     if (!mounted) return;
     setState(() => _busy = false);
+  }
+
+  /// They asked for you and the answer is no. Quiet on purpose: declining a
+  /// neighbor should feel like a soft word, not an action with a color.
+  Future<void> _decline() async {
+    final userId = ref.read(authProvider).userId;
+    if (userId == null) {
+      setState(() => _localError = 'Sign in again to answer this.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _localError = null;
+    });
+    try {
+      await TrellisClient.respondInvite(
+        needId: _favor.needId,
+        helperId: userId,
+        accept: false,
+      );
+      if (!mounted) return;
+      // The list underneath refreshes on its own clock; kick it so the row
+      // does not linger, and step back out.
+      unawaited(ref.read(favorsProvider.notifier).load(userId, force: true));
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _localError = e.toString();
+      });
+    }
   }
 
   Future<void> _finish() async {
@@ -175,6 +215,16 @@ class _FavorDetailScreenState extends ConsumerState<FavorDetailScreen> {
         _Quote(text: _favor.originalRequest, who: _name),
       ],
       ..._whySection(),
+      if (_favor.invited) ...[
+        const SizedBox(height: FSpace.xl),
+        Center(
+          child: FTextButton(
+            'Not this time',
+            color: FColors.inkTertiary,
+            onPressed: _busy ? null : _decline,
+          ),
+        ),
+      ],
     ];
   }
 
@@ -194,10 +244,20 @@ class _FavorDetailScreenState extends ConsumerState<FavorDetailScreen> {
       const SizedBox(height: FSpace.xxl),
       // Blue, not grey: grey is the colour of their words a few lines up, and
       // two identical strips read as two quotes rather than a quote and an
-      // instruction.
+      // instruction. The wording follows what kind of favor it is: returning
+      // a ladder is not the same beat as spending an afternoon together.
       Notice(
-        'Hand it over in person, then close it out here so $_firstName knows '
-        'it landed.',
+        switch (_favor.category) {
+          FavorCategory.borrow =>
+            'Meet at the door. Close it out here once it is back with you.',
+          FavorCategory.company =>
+            'Enjoy it. Close it out here afterwards.',
+          FavorCategory.hands || FavorCategory.skill =>
+            'Work through it together, then close it out here.',
+          _ =>
+            'Hand it over in person, then close it out here so $_firstName '
+                'knows it landed.',
+        },
         kind: NoticeKind.info,
         icon: CupertinoIcons.checkmark_circle,
       ),
@@ -250,9 +310,13 @@ class _FavorDetailScreenState extends ConsumerState<FavorDetailScreen> {
   /// Editorial order, not score order: these are facts, and sorting them would
   /// turn the relationship back into a leaderboard.
   List<Widget> _connectionSection() {
+    // v1 "mutual" and v2 "tie" say the same sentence; a server sending both
+    // should still read as one fact, so dedupe on the words.
+    final seen = <String>{};
     final facts = [
       for (final entry in _connectionFacts.entries)
-        if ((_favor.signals[entry.key] ?? 0) > 0) entry.value,
+        if ((_favor.signals[entry.key] ?? 0) > 0 && seen.add(entry.value.$2))
+          entry.value,
     ];
     if (facts.isEmpty) return const [];
 
