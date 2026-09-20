@@ -28,8 +28,9 @@ class VisionService:
 
         from openai import AsyncOpenAI
         self.client = AsyncOpenAI(api_key=self.api_key)
-        self.model = "gpt-4-vision-preview"
-        self.vision_model = "gpt-4-turbo"  # Fallback to turbo with vision capability
+        # Using gpt-4o (latest) with excellent vision capabilities
+        # Alternative: "gpt-4-turbo-2024-04-09"
+        self.vision_model = "gpt-4o"
 
     async def _load_image_as_base64(self, image_path: str) -> str:
         """Load image file and convert to base64"""
@@ -58,6 +59,8 @@ class VisionService:
         prompt: str,
     ) -> Dict:
         """Send images to OpenAI Vision API with prompt"""
+        print(f"🔄 Analyzing {len(image_paths)} image(s) with gpt-4o...")
+        logger.info(f"🔄 Analyzing {len(image_paths)} image(s) with gpt-4o...")
         content = [{"type": "text", "text": prompt}]
 
         # Add images to request
@@ -78,6 +81,7 @@ class VisionService:
                 continue
 
         try:
+            print(f"📡 Calling OpenAI API with {len(content)} content blocks...")
             response = await self.client.chat.completions.create(
                 model=self.vision_model,
                 messages=[
@@ -91,6 +95,8 @@ class VisionService:
             )
 
             response_text = response.choices[0].message.content
+            print(f"✅ OpenAI response received ({len(response_text)} chars)")
+            logger.info(f"✅ OpenAI response received ({len(response_text)} chars)")
 
             # Try to extract JSON from response
             try:
@@ -98,14 +104,20 @@ class VisionService:
                 json_end = response_text.rfind("}") + 1
                 if json_start != -1 and json_end > json_start:
                     json_str = response_text[json_start:json_end]
-                    return json.loads(json_str)
-            except (json.JSONDecodeError, ValueError):
+                    result = json.loads(json_str)
+                    print(f"✅ JSON parsed successfully: {list(result.keys())}")
+                    logger.info(f"✅ JSON parsed successfully: {list(result.keys())}")
+                    return result
+            except (json.JSONDecodeError, ValueError) as parse_error:
+                print(f"⚠️ Failed to parse JSON: {parse_error}")
+                logger.warning(f"⚠️ Failed to parse JSON: {parse_error}")
                 # If not JSON, return as-is
                 return {"raw_response": response_text}
 
             return {"raw_response": response_text}
         except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
+            print(f"❌ OpenAI API error: {e}")
+            logger.error(f"❌ OpenAI API error: {e}", exc_info=True)
             raise
 
     async def analyze_pantry_vision(

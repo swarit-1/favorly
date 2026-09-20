@@ -23,7 +23,18 @@ CREATE TABLE IF NOT EXISTS users (
   circle_id UUID NOT NULL,
   name VARCHAR NOT NULL,
   venmo_handle VARCHAR,
-  created_at TIMESTAMP DEFAULT NOW()
+  bio TEXT,
+  photo_url TEXT,
+  role VARCHAR DEFAULT 'both' CHECK (role IN ('shopper', 'requester', 'both')),
+  address_unit VARCHAR,
+  address_floor VARCHAR,
+  address_buzzer VARCHAR,
+  address_notes TEXT,
+  dietary TEXT[] DEFAULT '{}',
+  preferred_stores TEXT[] DEFAULT '{}',
+  availability TEXT[] DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Circles

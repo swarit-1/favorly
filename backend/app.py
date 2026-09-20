@@ -1,6 +1,7 @@
 """Favorly FastAPI application."""
 
 import os
+import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -13,6 +14,12 @@ from shared.contracts import models
 
 # Load environment variables from .env
 load_dotenv()
+
+# Configure logging to print to stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:     %(message)s',
+)
 
 
 # ============================================================================
@@ -43,6 +50,13 @@ async def lifespan(app: FastAPI):
         response = supabase.table("users").select("*").limit(1).execute()
         print("✅ Supabase connected")
         print("\n✅ All systems ready!")
+
+        # Log all registered routes
+        print("\n📡 Registered routes:")
+        for route in app.routes:
+            if hasattr(route, 'path'):
+                methods = getattr(route, 'methods', ['N/A'])
+                print(f"  - {route.path} [{methods}]")
     except Exception as e:
         print(f"\n❌ Startup failed: {e}")
         raise
@@ -110,17 +124,30 @@ async def health_check():
 # ROUTES
 # ============================================================================
 
-from routes import auth, trips, requests, users, merged_list, vision, experiences
+from routes import auth, trips, requests, users, merged_list, vision, experiences, messages, notifications
 from routes.linq_webhook import router as linq_router
 
+print("\n📡 Registering routers...")
 app.include_router(auth.router)
+print("✅ Auth router registered")
 app.include_router(trips.router)
+print("✅ Trips router registered")
 app.include_router(requests.router)
+print("✅ Requests router registered")
 app.include_router(users.router)
+print("✅ Users router registered")
 app.include_router(merged_list.router)
+print("✅ Merged list router registered")
 app.include_router(vision.router)
+print("✅ Vision router registered")
 app.include_router(experiences.router)
+print("✅ Experiences router registered")
+app.include_router(messages.router)
+print("✅ Messages router registered")
+app.include_router(notifications.router)
+print("✅ Notifications router registered")
 app.include_router(linq_router)  # Linq agent: inbound texts -> matching -> reply
+print("✅ Linq router registered\n")
 
 @app.post("/trips", tags=["trips"])
 async def create_trip(trip: dict):

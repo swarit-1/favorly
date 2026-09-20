@@ -31,6 +31,17 @@ class AuthResponse(BaseModel):
     circle_id: UUID
     name: str
     access_token: str
+    refresh_token: str
+    bio: str | None = None
+    photo_url: str | None = None
+    role: str = "both"
+    address_unit: str | None = None
+    address_floor: str | None = None
+    address_buzzer: str | None = None
+    address_notes: str | None = None
+    dietary: list[str] = []
+    preferred_stores: list[str] = []
+    availability: list[str] = []
 
 
 @router.post("/signup", response_model=AuthResponse)
@@ -56,6 +67,7 @@ async def signup(req: SignupRequest):
 
         user_id = auth_response.user.id
         access_token = auth_response.session.access_token if auth_response.session else ""
+        refresh_token = auth_response.session.refresh_token if auth_response.session else ""
 
         # Find circle by invite code
         print(f"🔍 Looking for circle with code: '{req.invite_code}'")
@@ -82,11 +94,23 @@ async def signup(req: SignupRequest):
         if not user_response.data:
             raise HTTPException(status_code=500, detail="Failed to create user")
 
+        user_data = user_response.data[0]
         return AuthResponse(
             user_id=user_id,
             circle_id=circle_id,
-            name=req.name,
+            name=user_data.get("name", req.name),
             access_token=access_token,
+            refresh_token=refresh_token,
+            bio=user_data.get("bio"),
+            photo_url=user_data.get("photo_url"),
+            role=user_data.get("role", "both"),
+            address_unit=user_data.get("address_unit"),
+            address_floor=user_data.get("address_floor"),
+            address_buzzer=user_data.get("address_buzzer"),
+            address_notes=user_data.get("address_notes"),
+            dietary=user_data.get("dietary") or [],
+            preferred_stores=user_data.get("preferred_stores") or [],
+            availability=user_data.get("availability") or [],
         )
     except HTTPException:
         raise
@@ -110,6 +134,7 @@ async def login(req: LoginRequest):
 
         user_id = auth_response.user.id
         access_token = auth_response.session.access_token
+        refresh_token = auth_response.session.refresh_token
 
         # Get user from users table
         user_response = supabase.table("users").select("*").eq("id", user_id).execute()
@@ -123,6 +148,17 @@ async def login(req: LoginRequest):
             circle_id=user_data["circle_id"],
             name=user_data["name"],
             access_token=access_token,
+            refresh_token=refresh_token,
+            bio=user_data.get("bio"),
+            photo_url=user_data.get("photo_url"),
+            role=user_data.get("role", "both"),
+            address_unit=user_data.get("address_unit"),
+            address_floor=user_data.get("address_floor"),
+            address_buzzer=user_data.get("address_buzzer"),
+            address_notes=user_data.get("address_notes"),
+            dietary=user_data.get("dietary") or [],
+            preferred_stores=user_data.get("preferred_stores") or [],
+            availability=user_data.get("availability") or [],
         )
     except HTTPException:
         raise
@@ -240,11 +276,29 @@ async def dev_login(req: DevLoginRequest):
         if not session.session:
             raise HTTPException(status_code=401, detail="Dev password rejected — re-run the seed script")
 
+        # Fetch full user profile from users table
+        try:
+            user_profile = supabase.table("users").select("*").eq("id", str(match.id)).execute()
+            user_data = user_profile.data[0] if user_profile.data else {}
+        except Exception:
+            user_data = {}
+
         return AuthResponse(
             user_id=match.id,
             circle_id=match.circle_id,
             name=match.name,
             access_token=session.session.access_token,
+            refresh_token=session.session.refresh_token,
+            bio=user_data.get("bio"),
+            photo_url=user_data.get("photo_url"),
+            role=user_data.get("role", "both"),
+            address_unit=user_data.get("address_unit"),
+            address_floor=user_data.get("address_floor"),
+            address_buzzer=user_data.get("address_buzzer"),
+            address_notes=user_data.get("address_notes"),
+            dietary=user_data.get("dietary") or [],
+            preferred_stores=user_data.get("preferred_stores") or [],
+            availability=user_data.get("availability") or [],
         )
     except HTTPException:
         raise

@@ -63,6 +63,12 @@ class SubstitutionDecision(str, Enum):
     TIMEOUT_SKIP = "timeout_skip"
 
 
+class ShopperRole(str, Enum):
+    SHOPPER = "shopper"
+    REQUESTER = "requester"
+    BOTH = "both"
+
+
 STORE_SECTION_ORDER = [
     StoreSection.PRODUCE,
     StoreSection.BAKERY,
@@ -81,6 +87,15 @@ STORE_SECTION_ORDER = [
 # DOMAIN ENTITIES
 # ============================================================================
 
+class Address(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    unit: Optional[str] = None
+    floor: Optional[str] = None
+    buzzer: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class User(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -88,7 +103,27 @@ class User(BaseModel):
     circle_id: UUID
     name: str
     venmo_handle: Optional[str] = None
+    bio: Optional[str] = Field(None, max_length=120)
+    photo_url: Optional[str] = None
+    role: ShopperRole = ShopperRole.BOTH
+    address: Optional[Address] = None
+    dietary: List[str] = Field(default_factory=list)
+    preferred_stores: List[str] = Field(default_factory=list)
+    availability: List[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    bio: Optional[str] = Field(None, max_length=120)
+    photo_url: Optional[str] = None
+    role: Optional[ShopperRole] = None
+    address: Optional[Address] = None
+    dietary: Optional[List[str]] = None
+    preferred_stores: Optional[List[str]] = None
+    availability: Optional[List[str]] = None
 
 
 class Circle(BaseModel):

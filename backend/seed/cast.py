@@ -46,8 +46,24 @@ class DemoCharacter:
     id: str
     name: str
     email: str
-    role: str  # "shopper", "requester"
+    role: str  # "shopper", "requester", or "both"
     venmo_handle: str
+    bio: str = ""
+    dietary: list = None
+    preferred_stores: list = None
+    availability: list = None
+    address_unit: str = None
+    address_floor: str = None
+    address_buzzer: str = None
+    address_notes: str = None
+
+    def __post_init__(self):
+        if self.dietary is None:
+            self.dietary = []
+        if self.preferred_stores is None:
+            self.preferred_stores = []
+        if self.availability is None:
+            self.availability = []
 
 
 # Character IDs (stable UUIDs)
@@ -56,13 +72,21 @@ BEN_ID = make_stable_uuid("ben-okafor")
 CHLOE_ID = make_stable_uuid("chloe-marchetti")
 MAYA_ID = make_stable_uuid("maya-iyer")
 
-# Characters with realistic names and emails
+# Characters with realistic names, emails, and profiles
 ANA = DemoCharacter(
     id=str(ANA_ID),
     name="Ana Delgado",
     email="ana@favorly.test",
-    role="shopper",
+    role="both",
     venmo_handle="ana-delgado",
+    bio="Weekday runner to Trader Joe's. Regular at produce section.",
+    dietary=["vegetarian"],
+    preferred_stores=["Trader Joe's", "Whole Foods"],
+    availability=["Mon", "Wed", "Fri", "Sat"],
+    address_unit="3B",
+    address_floor="3",
+    address_buzzer="#123",
+    address_notes="Leave with doorman",
 )
 
 BEN = DemoCharacter(
@@ -71,22 +95,45 @@ BEN = DemoCharacter(
     email="ben@favorly.test",
     role="requester",
     venmo_handle="ben-okafor",
+    bio="Works from home, flexible timing for deliveries.",
+    dietary=["gluten-free", "dairy-free"],
+    preferred_stores=["Trader Joe's", "Costco"],
+    availability=["Mon", "Tue", "Wed", "Thu", "Fri"],
+    address_unit="5A",
+    address_floor="5",
+    address_buzzer="Apt 5A",
 )
 
 CHLOE = DemoCharacter(
     id=str(CHLOE_ID),
     name="Chloe Marchetti",
     email="chloe@favorly.test",
-    role="requester",
+    role="both",
     venmo_handle="chloe-m",
+    bio="Saturday shopper. Always looking for deals on fresh produce.",
+    dietary=["vegan"],
+    preferred_stores=["Whole Foods", "Trader Joe's"],
+    availability=["Sat", "Sun"],
+    address_unit="2C",
+    address_floor="2",
+    address_buzzer="Ring bell twice",
+    address_notes="Building has gate, buzzer under maintenance",
 )
 
 MAYA = DemoCharacter(
     id=str(MAYA_ID),
     name="Maya Iyer",
     email="maya@favorly.test",
-    role="requester",
+    role="shopper",
     venmo_handle="maya-iyer",
+    bio="Frequent Costco shopper. Bulk buy specialist.",
+    dietary=["nut-free"],
+    preferred_stores=["Costco", "Safeway"],
+    availability=["Tue", "Thu", "Sat", "Sun"],
+    address_unit="7F",
+    address_floor="7",
+    address_buzzer="#789",
+    address_notes="Leave at reception desk",
 )
 
 # All characters in order (shopper first, then requesters)

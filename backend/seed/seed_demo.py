@@ -60,9 +60,18 @@ def seed_demo():
                 "circle_id": DEMO_CIRCLE.id,
                 "name": char.name,
                 "venmo_handle": char.venmo_handle,
+                "bio": char.bio,
+                "role": "both" if char.role == "both" else char.role,
+                "dietary": char.dietary,
+                "preferred_stores": char.preferred_stores,
+                "availability": char.availability,
+                "address_unit": char.address_unit,
+                "address_floor": char.address_floor,
+                "address_buzzer": char.address_buzzer,
+                "address_notes": char.address_notes,
             }).execute()
             users_created.append(user_response.data[0])
-            print(f"✅ Created user: {char.name}")
+            print(f"✅ Created user: {char.name} (role: {char.role})")
 
         # Get user IDs
         ana_id = ANA.id

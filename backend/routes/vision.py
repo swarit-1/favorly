@@ -6,7 +6,7 @@ The actual VLM analysis will be injected via VisionService once API key is avail
 """
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from typing import List, Optional
+from typing import List, Optional, Any
 import uuid
 import json
 import logging
@@ -29,13 +29,17 @@ image_storage = ImageStorageService()
 
 # Use real VisionService if OpenAI API key is available, otherwise fall back to mock
 try:
-    if os.getenv("OPENAI_API_KEY"):
-        vision_service = VisionService(api_key=os.getenv("OPENAI_API_KEY"))
+    api_key = os.getenv("OPENAI_API_KEY")
+    if api_key:
+        vision_service = VisionService(api_key=api_key)
+        print("✅ Real VisionService initialized with OpenAI API")
         logger.info("✅ Real VisionService initialized with OpenAI API")
     else:
+        print("⚠️  OPENAI_API_KEY not set, falling back to MockVisionService")
         logger.warning("⚠️  OPENAI_API_KEY not set, falling back to MockVisionService")
         vision_service = MockVisionService()
 except Exception as e:
+    print(f"⚠️  Failed to initialize VisionService: {e}, using MockVisionService")
     logger.warning(f"⚠️  Failed to initialize VisionService: {e}, using MockVisionService")
     vision_service = MockVisionService()
 
@@ -44,7 +48,7 @@ class AnalysisResponse(BaseModel):
     """Generic response for all vision analyses"""
     analysis_id: str
     domain_type: str
-    detected_items: dict
+    detected_items: Any
     summary: str
     image_refs: List[str]
     analyzed_at: str
@@ -63,32 +67,49 @@ async def scan_pantry(
     - low_or_empty: Items that are low or empty
     - suggestions: Smart suggestions based on detected items
     """
+    print("🎯 POST /vision/grocery/pantry-scan called")
+    logger.info("🎯 POST /vision/grocery/pantry-scan called")
+    print(f"📤 Received {len(files)} file(s)")
+    logger.info(f"📤 Received {len(files)} file(s)")
+    print(f"🔧 Using vision service: {type(vision_service).__name__}")
     try:
         # Upload images
+        print("📁 Uploading images to storage...")
+        logger.info("📁 Uploading images to storage...")
         image_refs = await image_storage.upload_images(
             files=files,
             user_id="demo_user",  # Placeholder
             domain="grocery_shopping"
         )
+        print(f"✅ Images uploaded: {image_refs}")
+        logger.info(f"✅ Images uploaded: {image_refs}")
 
-        # Analyze (placeholder until API key available)
+        # Analyze
+        print("🔍 Analyzing images with vision service...")
+        logger.info("🔍 Analyzing images with vision service...")
         analysis_result = await vision_service.analyze_pantry_vision(
             image_refs=image_refs,
             user_id="demo_user"
         )
+        print(f"📊 Analysis result keys: {list(analysis_result.keys())}")
+        logger.info(f"📊 Analysis result: {analysis_result}")
 
-        return AnalysisResponse(
+        response = AnalysisResponse(
             analysis_id=str(uuid.uuid4()),
             domain_type="grocery_shopping",
             detected_items=analysis_result.get("detected_items", []),
             summary=analysis_result.get("summary", ""),
             image_refs=image_refs,
             analyzed_at=datetime.utcnow().isoformat(),
-            is_placeholder=not isinstance(vision_service, VisionService) or isinstance(vision_service, MockVisionService),
+            is_placeholder=isinstance(vision_service, MockVisionService),
         )
+        print(f"✅ Returning response with is_placeholder={response.is_placeholder}")
+        logger.info(f"✅ Returning response: {response.model_dump()}")
+        return response
 
     except Exception as e:
-        logger.error(f"Error in pantry scan: {e}")
+        print(f"❌ Error in pantry scan: {e}")
+        logger.error(f"❌ Error in pantry scan: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -357,9 +378,20 @@ async def analyze_cleaning_needs(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/test")
+async def test_vision():
+    """Test vision endpoint"""
+    logger.info("🧪 Vision test endpoint hit!")
+    return {
+        "status": "vision_router_working",
+        "message": "Vision routes are registered and accessible",
+    }
+
+
 @router.get("/health")
 async def health_check():
     """Health check for vision service"""
+    logger.info("🏥 Health check called")
     return {
         "status": "ok",
         "vision_service": "mock" if isinstance(vision_service, MockVisionService) else "real",
