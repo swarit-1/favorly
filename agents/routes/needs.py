@@ -8,7 +8,7 @@ import recommendations
 import sse
 import worker
 from deps import get_conn
-from models import NeedClaimIn, NeedIn, RecommendationsOut
+from models import FavorReviewIn, NeedClaimIn, NeedIn, RecommendationsOut
 
 router = APIRouter()
 
@@ -119,3 +119,80 @@ async def fulfill_need(need_id: str, conn: asyncpg.Connection = Depends(get_conn
     await sse.publish("edge_created", {"src": helper_id, "dst": needer_id, "kind": "favor"})
 
     return {"id": need_id, "status": "fulfilled", "favor_logged": True}
+
+
+@router.post("/needs/{need_id}/review")
+async def review_need(
+    need_id: str,
+    payload: FavorReviewIn,
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    """Rate a finished favor, optionally with a comment.
+
+    Re-submitting replaces your own review rather than stacking another row.
+    The comment is also written to the event log, so extraction can mine it
+    for grocery-relevant signal the way it does any other message -- a review
+    saying "she always remembers I'm gluten free" is a claim waiting to happen.
+    """
+    need = await conn.fetchrow("SELECT * FROM needs WHERE id = $1", need_id)
+    if not need:
+        raise HTTPException(404, "need not found")
+    if need["status"] != "fulfilled":
+        raise HTTPException(409, f"need is {need['status']}, expected fulfilled")
+
+    reviewer = await conn.fetchrow(
+        "SELECT id FROM app_people WHERE id = $1", payload.reviewer_id)
+    if not reviewer:
+        raise HTTPException(404, "reviewer not found")
+
+    comment = (payload.comment or "").strip() or None
+
+    row = await conn.fetchrow(
+        "INSERT INTO favor_reviews (need_id, reviewer_id, rating, comment) "
+        "VALUES ($1, $2, $3, $4) "
+        "ON CONFLICT (need_id, reviewer_id) DO UPDATE "
+        "  SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, created_at = now() "
+        "RETURNING id, rating, comment, created_at",
+        need_id, payload.reviewer_id, payload.rating, comment,
+    )
+
+    if comment:
+        event_row = await conn.fetchrow(
+            "INSERT INTO events (person_id, kind, body) VALUES ($1, 'message', $2) "
+            "RETURNING id",
+            payload.reviewer_id, comment,
+        )
+        await worker.enqueue_event(str(event_row["id"]), payload.reviewer_id, comment)
+
+    await sse.publish("favor_reviewed", {"need_id": need_id, "rating": payload.rating})
+
+    return {
+        "id": str(row["id"]),
+        "need_id": need_id,
+        "rating": row["rating"],
+        "comment": row["comment"],
+        "created_at": row["created_at"],
+    }
+
+
+@router.get("/needs/{need_id}/review")
+async def get_review(
+    need_id: str,
+    reviewer_id: str = Query(...),
+    conn: asyncpg.Connection = Depends(get_conn),
+):
+    """Your own review of this favor, if you left one."""
+    row = await conn.fetchrow(
+        "SELECT id, rating, comment, created_at FROM favor_reviews "
+        "WHERE need_id = $1 AND reviewer_id = $2",
+        need_id, reviewer_id,
+    )
+    if not row:
+        raise HTTPException(404, "no review yet")
+    return {
+        "id": str(row["id"]),
+        "need_id": need_id,
+        "rating": row["rating"],
+        "comment": row["comment"],
+        "created_at": row["created_at"],
+    }

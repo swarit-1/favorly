@@ -92,6 +92,21 @@ CREATE TABLE IF NOT EXISTS canonical_labels (
 );
 
 
+-- How a finished favor went, captured at hand-off. Separate from `needs`
+-- because a need is the ask and this is the aftermath: it arrives later, it is
+-- optional, and it belongs to whoever is doing the rating.
+CREATE TABLE IF NOT EXISTS favor_reviews (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  need_id     UUID NOT NULL REFERENCES needs(id),
+  reviewer_id UUID NOT NULL REFERENCES users(id),
+  rating      SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment     TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- One review per person per favor; re-submitting updates it.
+  UNIQUE (need_id, reviewer_id)
+);
+CREATE INDEX IF NOT EXISTS favor_reviews_need_idx ON favor_reviews (need_id);
+
 -- Identity, read-only, assembled from the auth account and its profile. Named
 -- `app_people` rather than `people` so nothing can mistake it for a table this
 -- service owns: it is a view, and the rows behind it belong to Supabase Auth

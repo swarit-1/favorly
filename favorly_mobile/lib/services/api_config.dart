@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// → the deployed API.
 class ApiConfig {
   static const _prefsKey = 'api_base_url';
+  static const _trellisPrefsKey = 'trellis_base_url';
 
   /// The deployed API. Overridable at build time with
   /// `--dart-define=API_BASE_URL=http://localhost:8000` for local work, or at
@@ -19,13 +20,28 @@ class ApiConfig {
     defaultValue: 'https://favorly-swart.vercel.app',
   );
 
+  /// The agent + graph service (recommendations, needs, favor reviews). It is
+  /// a separate deployment from the errand API because it can't run serverless
+  /// — background worker, connection pool, SSE.
+  static const String trellisCompiledDefault = String.fromEnvironment(
+    'TRELLIS_BASE_URL',
+    defaultValue: 'http://localhost:8010',
+  );
+
   static String _baseUrl = compiledDefault;
+  static String _trellisBaseUrl = trellisCompiledDefault;
 
   /// The URL requests go to. Never has a trailing slash.
   static String get baseUrl => _baseUrl;
 
   /// True when the user overrode the compiled-in default.
   static bool get isOverridden => _baseUrl != compiledDefault;
+
+  /// Where the agent + graph service lives. Never has a trailing slash.
+  static String get trellisBaseUrl => _trellisBaseUrl;
+
+  static bool get isTrellisOverridden =>
+      _trellisBaseUrl != trellisCompiledDefault;
 
   static String _normalize(String raw) {
     var url = raw.trim();
@@ -45,6 +61,10 @@ class ApiConfig {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString(_prefsKey);
       if (saved != null && saved.isNotEmpty) _baseUrl = _normalize(saved);
+      final savedTrellis = prefs.getString(_trellisPrefsKey);
+      if (savedTrellis != null && savedTrellis.isNotEmpty) {
+        _trellisBaseUrl = _normalize(savedTrellis);
+      }
     } catch (_) {
       // No storage (first run, restricted platform) — the default still works.
     }
@@ -58,12 +78,24 @@ class ApiConfig {
     } catch (_) {}
   }
 
-  /// Back to the compiled-in default.
+  static Future<void> setTrellis(String raw) async {
+    _trellisBaseUrl = raw.trim().isEmpty
+        ? trellisCompiledDefault
+        : _normalize(raw);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_trellisPrefsKey, _trellisBaseUrl);
+    } catch (_) {}
+  }
+
+  /// Back to the compiled-in defaults.
   static Future<void> reset() async {
     _baseUrl = compiledDefault;
+    _trellisBaseUrl = trellisCompiledDefault;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_prefsKey);
+      await prefs.remove(_trellisPrefsKey);
     } catch (_) {}
   }
 }

@@ -24,6 +24,7 @@ class DevLoginScreen extends ConsumerStatefulWidget {
 class _DevLoginScreenState extends ConsumerState<DevLoginScreen> {
   final _name = TextEditingController();
   final _server = TextEditingController(text: ApiConfig.baseUrl);
+  final _trellis = TextEditingController(text: ApiConfig.trellisBaseUrl);
   late Future<List<Map<String, dynamic>>> _users;
   String? _error;
   bool _isLoading = false;
@@ -38,6 +39,7 @@ class _DevLoginScreenState extends ConsumerState<DevLoginScreen> {
   void dispose() {
     _name.dispose();
     _server.dispose();
+    _trellis.dispose();
     super.dispose();
   }
 
@@ -78,12 +80,24 @@ class _DevLoginScreenState extends ConsumerState<DevLoginScreen> {
     }
   }
 
+  /// The agent + graph service is a separate deployment from the errand API,
+  /// so it gets its own address.
+  Future<void> _applyTrellis() async {
+    await ApiConfig.setTrellis(_trellis.text);
+    if (!mounted) return;
+    setState(() => _trellis.text = ApiConfig.trellisBaseUrl);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Agent API set to ${ApiConfig.trellisBaseUrl}')),
+    );
+  }
+
   /// Drop a saved override and go back to the build's default server.
   Future<void> _resetServer() async {
     await ApiConfig.reset();
     if (!mounted) return;
     setState(() {
       _server.text = ApiConfig.baseUrl;
+      _trellis.text = ApiConfig.trellisBaseUrl;
       _error = null;
       _users = ApiClient.devUsers();
     });
@@ -142,6 +156,26 @@ class _DevLoginScreenState extends ConsumerState<DevLoginScreen> {
                       ),
                     ),
                   ),
+                const SizedBox(height: FSpace.xl),
+                const FieldLabel('Agent API'),
+                TextField(
+                  controller: _trellis,
+                  keyboardType: TextInputType.url,
+                  autocorrect: false,
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    hintText: 'http://10.0.0.196:8010',
+                    helperText: 'Recommendations and favors. Separate service.',
+                    helperStyle:
+                        FType.caption.copyWith(color: FColors.inkTertiary),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.check, color: FColors.blue),
+                      tooltip: 'Use this agent API',
+                      onPressed: _applyTrellis,
+                    ),
+                  ),
+                  onSubmitted: (_) => _applyTrellis(),
+                ),
                 const SizedBox(height: FSpace.xl),
                 const FieldLabel('Email'),
                 TextField(
