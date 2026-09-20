@@ -34,6 +34,9 @@ class VisionService:
         self.api_base_url = os.getenv("MUSE_API_BASE_URL", "https://api.meta.ai/v1")
         # Best model for vision/multimodal: muse-spark-1.3
         self.model = os.getenv("MUSE_MODEL", "muse-spark-1.3")
+        # Max tokens for vision responses (image analysis returns detailed JSON)
+        # Default 4096 for detailed responses. Configurable via MUSE_MAX_TOKENS env var
+        self.max_tokens = int(os.getenv("MUSE_MAX_TOKENS", "4096"))
 
     async def _load_image_as_base64(self, image_path: str) -> str:
         """Load image file and convert to base64"""
@@ -97,7 +100,7 @@ class VisionService:
                     ],
                 }
             ],
-            "max_tokens": 2048,
+            "max_tokens": self.max_tokens,
             "temperature": 0.7,
         }
 
@@ -114,7 +117,7 @@ class VisionService:
             print(f"🔗 Endpoint: {muse_endpoint}")
             print(f"🤖 Model: {self.model}")
             print(f"📝 Prompt length: {len(prompt)} chars")
-            print(f"⚙️  Max tokens: {request_body.get('max_tokens', 2048)}")
+            print(f"⚙️  Max tokens: {self.max_tokens}")
             logger.info(f"🔗 Endpoint: {muse_endpoint}")
             logger.info(f"🤖 Model: {self.model}")
             logger.debug(f"📝 Prompt: {prompt[:200]}...")  # Log first 200 chars of prompt
@@ -369,6 +372,9 @@ class OpenAIVisionService:
             raise RuntimeError("OPENAI_API_KEY must be set to use OpenAI fallback")
         self.client = AsyncOpenAI(api_key=self.api_key)
         self.model = "gpt-4-vision"
+        # Max tokens for vision responses (image analysis returns detailed JSON)
+        # Configurable via OPENAI_MAX_TOKENS env var, default 4096
+        self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "4096"))
 
     async def _load_image_as_base64(self, image_path: str) -> str:
         """Load image file and convert to base64"""
@@ -403,7 +409,7 @@ class OpenAIVisionService:
             response = await self.client.chat.completions.create(
                 model="gpt-4-vision",
                 messages=[{"role": "user", "content": content}],
-                max_tokens=2048,
+                max_tokens=self.max_tokens,
                 temperature=0.7,
             )
 
