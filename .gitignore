@@ -54,6 +54,19 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+favorly_mobile/build/
+favorly_mobile/.dart_tool/
+
+# iOS
+ios/Pods/
+ios/Podfile.lock
+ios/.symlinks/
+
 .agents/
 .claude/
 skills-lock.json
