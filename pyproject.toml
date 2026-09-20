@@ -1,0 +1,32 @@
+# Deployment manifest for the Favorly API on Vercel.
+#
+# Vercel builds with `uv`, which needs a PEP 621 [project] table, and its Python
+# runtime auto-detects FastAPI from [tool.vercel].entrypoint. backend/api/index.py
+# puts backend/ on sys.path so app.py keeps importing `routes` and `shared` as
+# top-level packages, exactly as it does under local uvicorn.
+#
+# Dependencies mirror backend/requirements.txt, which stays the source of truth
+# for local dev and the Dockerfile. Change both together.
+
+[project]
+name = "favorly-api"
+version = "0.1.0"
+description = "Favorly errand-coordination API"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.109.0",
+  "uvicorn[standard]>=0.27.0",
+  "python-multipart>=0.0.6",
+  "pydantic>=2.6.0",
+  "pydantic-settings>=2.2.0",
+  "supabase>=2.4.0",
+  "python-dotenv>=1.0.0",
+  "httpx>=0.27.0",
+]
+
+[tool.uv]
+# Nothing here is an installable package — this file only declares dependencies.
+package = false
+
+[tool.vercel]
+entrypoint = "backend.api.index:app"
