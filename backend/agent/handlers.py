@@ -31,11 +31,14 @@ HELP_TEXT = (
 )
 
 
-def handle_message(store: AgentStore, phone: str, text: str, now: Optional[datetime] = None) -> tuple[str, list[Notification]]:
+def handle_message(store: AgentStore, phone: str, text: str, now: Optional[datetime] = None,
+                   parsed: Optional[ParsedIntent] = None) -> tuple[str, list[Notification]]:
     now = now or datetime.now()
     first_contact = phone not in store.profiles
     profile = store.user_for_phone(phone)
-    parsed = parse_message(text, now)
+    # favor_flow already rule-parsed the text; reusing its result keeps the
+    # ack inside the 2 s budget (no LLM round trip on the grocery path).
+    parsed = parsed or parse_message(text, now)
 
     store.events.append(("person", profile))
     if first_contact:

@@ -409,10 +409,11 @@ async def handle_inbound(
     if fast is not None:
         return fast
 
-    # 2. Grocery loop, untouched.
+    # 2. Grocery loop, untouched (the rule parse is reused so no LLM call
+    # delays the reply).
     parsed = parse_rules(text, now)
     if _route_to_grocery(parsed, text):
-        reply, notes = handle_message(store, phone, text, now)
+        reply, notes = handle_message(store, phone, text, now, parsed=parsed)
         return ([reply], notes)
 
     # 3. Everything else: Trellis intake.
