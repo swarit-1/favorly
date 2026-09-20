@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../dev/fixtures.dart';
+import '../models/route_models.dart';
 import 'api_config.dart';
 
 /// Where requests go. Set it at runtime from the app's Server field, or at
@@ -261,6 +263,41 @@ class ApiClient {
       return jsonDecode(response.body);
     } else {
       throw Exception('Get merged list failed: ${response.body}');
+    }
+  }
+
+  // --- FAVORLY ROUTE (S2) ---
+
+  /// The shortest walk through the store for [tripId], plus explained
+  /// suggestions and per-requester cap totals. Accepting a suggestion is a
+  /// re-call with its item appended to [extraItems]
+  /// (`{"name","qty","section"}` maps, `requester_id` optional).
+  static Future<RoutePlan> planRoute(
+    String tripId, {
+    List<Map<String, dynamic>>? extraItems,
+  }) async {
+    if (kUseFixtures) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      return RoutePlan.fromJson(
+        fixtureRoutePlan(tripId, extraItems ?? const []),
+      );
+    }
+    final body = <String, dynamic>{'trip_id': tripId};
+    if (extraItems != null && extraItems.isNotEmpty) {
+      body['extra_items'] = extraItems;
+    }
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/route/plan'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return RoutePlan.fromJson(
+        _decodeJson(response, 'Plan route') as Map<String, dynamic>,
+      );
+    } else {
+      throw Exception('Plan route failed: ${response.body}');
     }
   }
 

@@ -12,6 +12,7 @@ import '../widgets/page.dart';
 import '../widgets/people.dart';
 import '../widgets/surfaces.dart';
 import 'receipt_screen.dart';
+import 'route_screen.dart';
 import 'substitution_capture_screen.dart';
 
 /// The merged, aisle-ordered list. One tap marks an item got; "Not here"
@@ -59,7 +60,14 @@ class ShoppingScreen extends ConsumerWidget {
     final neighbors = trip.requests.where((r) => r.taking).length;
 
     return FavorlyPage(
-      topBar: const FTopBar(title: 'Shopping'),
+      topBar: FTopBar(
+        title: 'Shopping',
+        trailing: FIconButton(
+          icon: CupertinoIcons.map,
+          label: 'Route',
+          onPressed: () => push(context, RouteScreen(tripId: tripId)),
+        ),
+      ),
       children: [
         PageTitle(
           trip.store,
