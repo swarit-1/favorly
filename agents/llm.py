@@ -235,7 +235,10 @@ _SKILL_RE = re.compile(
     re.IGNORECASE,
 )
 _COMPANY_RE = re.compile(
-    r"\b(walk|run|jog|coffee|gym|workout|study|watch the game)\b.{0,24}\bwith me\b|anyone want to",
+    r"\b(walk|run|jog|coffee|gym|workout|study|watch the game)\b.{0,24}\bwith me\b"
+    r"|anyone want to"
+    r"|\b(?:need|want|use)\s+(?:some\s+)?company\b(?:\s+on\s+a\s+(walk|run|jog|hike))?"
+    r"|\bkeep me company\b|\bjoin me\b",
     re.IGNORECASE,
 )
 _RIDE_RE = re.compile(r"\b(ride|lift|drive me|drop me)\b", re.IGNORECASE)
@@ -375,10 +378,12 @@ def _parse_favor_mock(text: str) -> dict:
 
     m = _COMPANY_RE.search(lowered)
     if m:
-        activity_word = (m.group(1) or "").lower()
+        activity_word = next((g for g in m.groups() if g), "").lower()
         activity = {"walk": "walking", "run": "running", "jog": "running"}.get(activity_word, activity_word)
         if not activity:
             n = _noun_after(lowered, m.end())
+            if n in {"on", "with", "at", "me", "a", "the", "to"}:
+                n = ""
             activity = {"walk": "walking", "run": "running", "go on a walk": "walking"}.get(n, n)
             if "walk" in n:
                 activity = "walking"
@@ -422,6 +427,20 @@ def _parse_favor_mock(text: str) -> dict:
             )
 
     if _ASKISH_RE.search(lowered):
+        # A recognizable ask that fits no specific rule still deserves matches.
+        # Only genuinely contentless texts ("help") bounce with the question.
+        cleaned = re.sub(
+            r"^(?:hey |hi |so )?(?:i (?:need|want|could use)|can (?:some|any)one|"
+            r"could (?:some|any)one|(?:please )?help me(?: with)?|anyone)\s+"
+            r"(?:some |a |an |the )?",
+            "", lowered.strip(" .!?"),
+        ).strip()
+        if len(cleaned.split()) >= 2:
+            title = (cleaned[0].upper() + cleaned[1:])[:60]
+            return _favor(
+                category="other", title=title, when_text=when,
+                duration_minutes=_duration(lowered, "other"),
+            )
         return _favor(scope="unclear", scope_reply="What do you need a hand with?")
     return _favor(intent="not_a_favor")
 
@@ -467,6 +486,7 @@ def parse_favor(text: str, now=None) -> dict:
 # ============================================================================
 
 DECIDE_SYSTEM_PROMPT = """You decide which favors a neighbor should do in a
+Mention the helper's own open store trip only when the need is an errand or names that store. An unrelated shopping trip is never the reason.
 neighborhood favor app.
 
 You are given a `helper` (the person you're advising) and a list of
@@ -533,7 +553,8 @@ def decide_favors(context: dict) -> list[dict] | None:
         return None
 
 
-PHRASE_HELPERS_SYSTEM_PROMPT = """You introduce neighbors to each other in a favor app. You get one ask, the asker, and up to 5 candidates the graph already ranked. Each candidate has facts: true statements, already written in second person to the asker, and shared: things the two have in common.
+PHRASE_HELPERS_SYSTEM_PROMPT = """You introduce neighbors to each other in a favor app.
+Mention someone's open store trip only when this ask is an errand or names that store. An unrelated shopping trip is never a reason to pick someone for a ladder, a bookshelf, or a walk. You get one ask, the asker, and up to 5 candidates the graph already ranked. Each candidate has facts: true statements, already written in second person to the asker, and shared: things the two have in common.
 
 Return the best 3, best first. You may reorder or drop. You may NOT add people, and you may NOT state anything that is not in that candidate's facts.
 

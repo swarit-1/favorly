@@ -332,6 +332,10 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
         needer_id = str(need["person_id"])
 
         trip_score, trip_reason = _trip_signal(trip, need["body"])
+        # An open grocery run says nothing about a bookshelf carry or a walk:
+        # keep the trip signal only for errands, or when the ask names the store.
+        if (need["category"] or "errand") != "errand" and trip_score < 1.0:
+            trip_score, trip_reason = 0.0, None
         reciprocity, favor_count = await _reciprocity(conn, helper_id, needer_id)
         mutual_names = await _mutuals(conn, helper_id, needer_id)
         mutual = min(len(mutual_names) / 2.0, 1.0)
