@@ -31,8 +31,21 @@ HELP_TEXT = (
 
 def handle_message(store: AgentStore, phone: str, text: str, now: Optional[datetime] = None) -> tuple[str, list[Notification]]:
     now = now or datetime.now()
+    first_contact = phone not in store.profiles
     profile = store.user_for_phone(phone)
     parsed = parse_message(text, now)
+
+    if first_contact:
+        reply, notes = _dispatch(store, phone, profile, parsed, now)
+        welcome = (
+            f"👋 Welcome to Favorly — you're in the {store.circle.name} circle as "
+            f"{profile.user.name} (text \"call me <name>\" to change that).\n\n"
+        )
+        return welcome + reply, notes
+    return _dispatch(store, phone, profile, parsed, now)
+
+
+def _dispatch(store: AgentStore, phone: str, profile: Profile, parsed: ParsedIntent, now: datetime) -> tuple[str, list[Notification]]:
 
     if parsed.intent == "set_name" and parsed.name:
         store.rename(phone, parsed.name)
