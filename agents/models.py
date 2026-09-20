@@ -41,6 +41,25 @@ class Requester(BaseModel):
     display_name: str
 
 
+class MatchEvidence(BaseModel):
+    """The graph facts `reason` was written from, kept structured so a client
+    can draw them instead of parsing them back out of a sentence.
+
+    Nothing here is model-written: the model only ever phrases `reason`.
+    `give_balance` is absent and stays absent -- see edges.py.
+    """
+
+    # Sent rather than left for the client to hardcode, so retuning the
+    # scoring doesn't leave a UI explaining arithmetic that no longer runs.
+    weights: dict[str, float] = Field(default_factory=dict)
+    mutual_names: list[str] = Field(default_factory=list)
+    favor_count: int = 0            # favors they did FOR the helper -- direction matters
+    trip_reason: str | None = None
+    fit_reason: str | None = None
+    affinity_reason: str | None = None
+    graph_reason: str | None = None  # the sentence the deterministic ranking would have written
+
+
 class FavorSuggestion(BaseModel):
     """One favor the frontend can render as a card and act on."""
 
@@ -53,6 +72,7 @@ class FavorSuggestion(BaseModel):
     effort: str = "medium"          # low | medium | high
     score: float
     signals: dict[str, float]       # what the graph contributed, for transparency
+    why: MatchEvidence = Field(default_factory=MatchEvidence)
     posted: str
 
 

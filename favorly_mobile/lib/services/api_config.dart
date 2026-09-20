@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Where the API lives, changeable at runtime.
 ///
 /// The base URL used to be a compile-time constant, which meant a rebuild every
-/// time the server moved — painful when it's a tunnel whose URL changes on each
+/// time the server moved, painful when it's a tunnel whose URL changes on each
 /// restart. Now it's a value you can set from the app and it sticks.
 ///
 /// Resolution order: whatever was saved in the app → `--dart-define=API_BASE_URL`
@@ -22,7 +22,7 @@ class ApiConfig {
 
   /// The agent + graph service (recommendations, needs, favor reviews). It is
   /// a separate deployment from the errand API because it can't run serverless
-  /// — background worker, connection pool, SSE.
+  /// background worker, connection pool, SSE.
   static const String trellisCompiledDefault = String.fromEnvironment(
     'TRELLIS_BASE_URL',
     defaultValue: 'https://favorly-agents.vercel.app',
@@ -66,7 +66,7 @@ class ApiConfig {
         _trellisBaseUrl = _normalize(savedTrellis);
       }
     } catch (_) {
-      // No storage (first run, restricted platform) — the default still works.
+      // No storage (first run, restricted platform). The default still works.
     }
   }
 

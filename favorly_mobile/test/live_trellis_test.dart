@@ -40,9 +40,13 @@ void main() {
         }
       });
 
-      test('claimed-by set comes back', () async {
-        final started = await TrellisClient.needIdsClaimedBy(_sam);
-        expect(started, isA<Set<String>>());
+      test('claimed favors come back with who asked', () async {
+        final claimed = await TrellisClient.claimedBy(_sam);
+        expect(claimed, isA<List<ClaimedFavor>>());
+        for (final c in claimed) {
+          expect(c.needId, isNotEmpty);
+          expect(c.body, isNotEmpty);
+        }
       });
 
       test('a favor round-trips: claim, fulfill, review', () async {
@@ -56,7 +60,7 @@ void main() {
 
         await TrellisClient.claim(needId: target.needId, personId: _sam);
         expect(
-          await TrellisClient.needIdsClaimedBy(_sam),
+          (await TrellisClient.claimedBy(_sam)).map((c) => c.needId),
           contains(target.needId),
         );
 
@@ -89,6 +93,6 @@ void main() {
         },
       );
     },
-    skip: 'live network test — run with --run-skipped against a local agent service',
+    skip: 'live network test, run with --run-skipped against a local agent service',
   );
 }

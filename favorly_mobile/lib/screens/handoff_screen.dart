@@ -31,7 +31,7 @@ class _HandoffScreenState extends ConsumerState<HandoffScreen> {
     popToRoot(context);
     messenger.showSnackBar(SnackBar(
       content: const Text('Delivered. Ledger updated.'),
-      action: SnackBarAction(label: 'See ledger', onPressed: () => tabs.state = 1),
+      action: SnackBarAction(label: 'See ledger', onPressed: () => tabs.state = FTab.circle),
     ));
   }
 

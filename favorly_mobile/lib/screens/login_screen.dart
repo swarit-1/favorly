@@ -30,7 +30,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  /// DEV BYPASS: in debug builds an email alone is enough — leave the password
+  /// DEV BYPASS: in debug builds an email alone is enough, so leave the password
   /// blank and we sign in as that account without it. Remove with real auth.
   bool get _isDevBypass => kDebugMode && _password.text.isEmpty;
 

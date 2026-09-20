@@ -53,6 +53,18 @@ String leavesLabel(DateTime t, {DateTime? now}) {
   return 'Leaves ${dayLabel(t, now: ref).toLowerCase()} · ${clock(t)}';
 }
 
+/// "just now" / "20m ago" / "3h ago" / "2d ago". Matches how Trellis words
+/// the `posted` field, so a locally timed label sits next to a server one
+/// without looking like a different app wrote it.
+String agoLabel(DateTime? at, {DateTime? now}) {
+  if (at == null) return '';
+  final d = (now ?? DateTime.now()).difference(at);
+  if (d.inMinutes < 2) return 'just now';
+  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+  if (d.inHours < 24) return '${d.inHours}h ago';
+  return '${d.inDays}d ago';
+}
+
 String greeting(DateTime now) {
   if (now.hour < 5) return 'Up late';
   if (now.hour < 12) return 'Good morning';

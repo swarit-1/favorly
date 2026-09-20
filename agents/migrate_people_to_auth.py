@@ -12,7 +12,7 @@ After:   auth.users                 -- identity, the only place a person is born
 `app_people` (a view over users JOIN auth.users) replaces `people` in queries,
 exposing the same `id` / `display_name` columns plus `email` and `circle_id`.
 
-Idempotent — safe to re-run. Runs in one transaction: it all lands or none of it.
+Idempotent, safe to re-run. Runs in one transaction: it all lands or none of it.
 
     python agents/migrate_people_to_auth.py --dry-run
     python agents/migrate_people_to_auth.py
@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
-# (table, column, nullable) — every graph reference to a person.
+# (table, column, nullable), every graph reference to a person.
 GRAPH_REFS = [
     ("events", "person_id", False),
     ("claims", "person_id", False),
@@ -83,7 +83,7 @@ async def preflight(conn) -> list[str]:
         )
         for o in orphans:
             problems.append(
-                f"people row '{o['display_name']}' ({o['id']}) has no users row — "
+                f"people row '{o['display_name']}' ({o['id']}) has no users row, "
                 "run backend/seed/seed_auth_users.py first"
             )
 
@@ -93,7 +93,7 @@ async def preflight(conn) -> list[str]:
     )
     for u in unauthed:
         problems.append(
-            f"users row '{u['name']}' ({u['id']}) has no auth account — "
+            f"users row '{u['name']}' ({u['id']}) has no auth account, "
             "run backend/seed/seed_auth_users.py, or delete the row"
         )
 
@@ -149,7 +149,7 @@ async def migrate(dry_run: bool = False):
     try:
         has_people = await conn.fetchval("SELECT to_regclass('public.people') IS NOT NULL")
         if not has_people:
-            print("ℹ️  `people` is already gone — re-asserting the FKs and view.")
+            print("ℹ️  `people` is already gone, re-asserting the FKs and view.")
 
         removed = await scrub_scratch_rows(conn, dry_run=False)
         if removed:
@@ -159,7 +159,7 @@ async def migrate(dry_run: bool = False):
 
         problems = await preflight(conn)
         if problems:
-            print("\n❌ Preflight failed — nothing was changed:\n")
+            print("\n❌ Preflight failed, nothing was changed:\n")
             for p in problems:
                 print(f"   • {p}")
             await tr.rollback()
@@ -198,7 +198,7 @@ async def migrate(dry_run: bool = False):
         # 4. The view the agent service reads identity through.
         await conn.execute(APP_PEOPLE_VIEW)
         n = await conn.fetchval("SELECT count(*) FROM app_people")
-        print(f"👁️  View `app_people` ready — {n} people")
+        print(f"👁️  View `app_people` ready, {n} people")
 
         if dry_run:
             print("\n🔙 --dry-run: rolling back")

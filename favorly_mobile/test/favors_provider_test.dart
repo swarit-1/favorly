@@ -13,7 +13,7 @@ Map<String, dynamic> sampleFavorJson() => {
       'action': 'Pick up 1 carton of oat milk',
       'requested_by': {'id': 'per_maya', 'display_name': 'Maya Chen'},
       'original_request':
-          'out of oat milk and the baby drinks it by the gallon — anyone heading out?',
+          'out of oat milk and the baby drinks it by the gallon, anyone heading out?',
       'reason': "You're already going to Trader Joe's this afternoon.",
       'effort': 'low',
       'score': 0.87,
@@ -90,10 +90,17 @@ void main() {
   });
 
   group('FavorSuggestion round-trip', () {
-    test('toJson matches the wire shape fromJson reads', () {
+    // Equality against the sample would break every time the server adds a
+    // field (`why` did exactly that). What the cache actually needs is that
+    // encoding and decoding is lossless, so assert the fixed point.
+    test('toJson is the shape fromJson reads back unchanged', () {
       final favor = FavorSuggestion.fromJson(sampleFavorJson());
+      final encoded = favor.toJson();
 
-      expect(favor.toJson(), sampleFavorJson());
+      for (final entry in sampleFavorJson().entries) {
+        expect(encoded[entry.key], entry.value, reason: entry.key);
+      }
+      expect(FavorSuggestion.fromJson(encoded).toJson(), encoded);
     });
 
     test('survives a trip through the cache encoding losslessly', () {
@@ -163,12 +170,82 @@ void main() {
     });
   });
 
+  group('ClaimedFavor', () {
+    Map<String, dynamic> claimedJson() => {
+          'id': 'need_7c21',
+          'body': 'out of oat milk, anyone heading out?',
+          'status': 'claimed',
+          'posted_by': {'id': 'per_maya', 'display_name': 'Maya Chen'},
+          'claimed_by': 'per_nivan',
+          'created_at': '2026-09-20T09:00:00.000Z',
+        };
+
+    test('reads the needs list shape', () {
+      final claimed = ClaimedFavor.fromJson(claimedJson());
+
+      expect(claimed.needId, 'need_7c21');
+      expect(claimed.requesterId, 'per_maya');
+      expect(claimed.requesterName, 'Maya Chen');
+      expect(claimed.createdAt, DateTime.parse('2026-09-20T09:00:00.000Z'));
+    });
+
+    // The hero has to render something for a favor claimed on another device,
+    // where the model's framing was never cached. Their own words stand in.
+    test('stands in for a recommendation the device never saw', () {
+      final favor = ClaimedFavor.fromJson(claimedJson()).toSuggestion(
+        posted: '3h ago',
+      );
+
+      expect(favor.needId, 'need_7c21');
+      expect(favor.title, 'out of oat milk, anyone heading out?');
+      expect(favor.originalRequest, 'out of oat milk, anyone heading out?');
+      expect(favor.requesterName, 'Maya Chen');
+      expect(favor.posted, '3h ago');
+      expect(favor.effort, isEmpty, reason: 'no effort was ever scored');
+      expect(favor.signals, isEmpty);
+    });
+  });
+
+  group('one favor at a time', () {
+    final favor = FavorSuggestion.fromJson(sampleFavorJson());
+
+    test('an empty plate can take anything on', () {
+      const state = FavorsState();
+
+      expect(state.hasActive, isFalse);
+      expect(state.isActive('need_7c21'), isFalse);
+      expect(state.canStart('need_7c21'), isTrue);
+    });
+
+    test('a full plate only allows the favor already on it', () {
+      final state = FavorsState(active: favor);
+
+      expect(state.hasActive, isTrue);
+      expect(state.isActive('need_7c21'), isTrue);
+      expect(state.canStart('need_7c21'), isTrue,
+          reason: 'reopening the one you are on is not a second favor');
+      expect(state.canStart('need_other'), isFalse);
+    });
+
+    test('finishing clears the plate, and only through clearActive', () {
+      final state = FavorsState(active: favor, activeStartedAt: DateTime.now());
+
+      // copyWith treats a missing argument as "keep", so null alone cannot
+      // clear it; that is what clearActive is for.
+      expect(state.copyWith(isRefreshing: true).active, favor);
+      expect(state.copyWith(clearActive: true).active, isNull);
+      expect(state.copyWith(clearActive: true).activeStartedAt, isNull);
+      expect(state.copyWith(clearActive: true).canStart('need_other'), isTrue);
+    });
+  });
+
   group('FavorsState defaults and copyWith', () {
     test('a fresh state shows nothing and is idle', () {
       const state = FavorsState();
 
       expect(state.favors, isEmpty);
-      expect(state.startedNeedIds, isEmpty);
+      expect(state.active, isNull);
+      expect(state.activeStartedAt, isNull);
       expect(state.isLoading, isFalse);
       expect(state.isRefreshing, isFalse);
       expect(state.error, isNull);
@@ -177,9 +254,11 @@ void main() {
     test('copyWith keeps untouched fields and clears error when omitted', () {
       final favor = FavorSuggestion.fromJson(sampleFavorJson());
       final fetchedAt = DateTime.now();
+      final startedAt = DateTime.now();
       final state = FavorsState(
         favors: [favor],
-        startedNeedIds: const {'need_7c21'},
+        active: favor,
+        activeStartedAt: startedAt,
         error: 'boom',
         fetchedAt: fetchedAt,
       );
@@ -187,7 +266,8 @@ void main() {
       final next = state.copyWith(isRefreshing: true);
 
       expect(next.favors, [favor]);
-      expect(next.startedNeedIds, {'need_7c21'});
+      expect(next.active, favor);
+      expect(next.activeStartedAt, startedAt);
       expect(next.fetchedAt, fetchedAt);
       expect(next.isRefreshing, isTrue);
       expect(next.error, isNull, reason: 'error is per-update, not sticky');

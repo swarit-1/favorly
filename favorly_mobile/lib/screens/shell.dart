@@ -7,6 +7,7 @@ import '../theme/tokens.dart';
 import 'circle_screen.dart';
 import 'substitution_choice_sheet.dart';
 import 'trips_screen.dart';
+import 'web_screen.dart';
 import 'you_screen.dart';
 
 class RootShell extends ConsumerStatefulWidget {
@@ -19,9 +20,16 @@ class RootShell extends ConsumerStatefulWidget {
 class _RootShellState extends ConsumerState<RootShell> {
   String? _shownPromptId;
 
+  // Order matters twice over: it is the tab bar, and FTab names these
+  // positions for the screens that jump between them. Change one, change both.
   static const _tabs = [
     _TabSpec('Trips', CupertinoIcons.house, CupertinoIcons.house_fill),
     _TabSpec('Circle', CupertinoIcons.person_2, CupertinoIcons.person_2_fill),
+    _TabSpec(
+      'Web',
+      CupertinoIcons.circle_grid_hex,
+      CupertinoIcons.circle_grid_hex_fill,
+    ),
     _TabSpec(
       'You',
       CupertinoIcons.person_crop_circle,
@@ -38,7 +46,7 @@ class _RootShellState extends ConsumerState<RootShell> {
     return Scaffold(
       body: IndexedStack(
         index: index,
-        children: const [TripsScreen(), CircleScreen(), YouScreen()],
+        children: const [TripsScreen(), CircleScreen(), WebScreen(), YouScreen()],
       ),
       bottomNavigationBar: _TabBar(
         index: index,
