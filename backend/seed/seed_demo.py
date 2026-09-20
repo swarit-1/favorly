@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Seed demo data into Supabase."""
+"""Seed demo data into Supabase using canonical cast."""
 
 import os
 import sys
-from uuid import uuid4
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -16,6 +15,15 @@ from shared.contracts.models import (
     RequestStatus,
     ItemStatus,
     StoreSection,
+)
+from cast import (
+    DEMO_CIRCLE,
+    ALL_CHARACTERS,
+    REALISTIC_ITEMS,
+    ANA,
+    BEN,
+    CHLOE,
+    MAYA,
 )
 
 load_dotenv()
@@ -31,44 +39,55 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
 def seed_demo():
-    """Seed demo circle with users and a trip."""
-    print("🌱 Seeding demo data...")
+    """Seed demo circle with users and multiple trips in different states."""
+    print("🌱 Seeding demo data from canonical cast...")
 
     try:
-        # Create circle
-        circle_id = str(uuid4())
+        # Create circle (using stable UUID from cast)
         circle_response = supabase.table("circles").insert({
-            "id": circle_id,
-            "name": "Maple St · Building B",
-            "invite_code": "DEMO01",
+            "id": DEMO_CIRCLE.id,
+            "name": DEMO_CIRCLE.name,
+            "invite_code": DEMO_CIRCLE.invite_code,
         }).execute()
         print(f"✅ Created circle: {circle_response.data[0]['name']}")
+        print(f"   Invite code: {DEMO_CIRCLE.invite_code}")
 
-        # Create demo users
-        users = []
-        user_names = ["Ana (Shopper)", "Bob (Requester 1)", "Charlie (Requester 2)"]
-        for i, name in enumerate(user_names):
-            user_id = str(uuid4())
+        # Create demo users (using stable UUIDs from cast)
+        users_created = []
+        for char in ALL_CHARACTERS:
             user_response = supabase.table("users").insert({
-                "id": user_id,
-                "circle_id": circle_id,
-                "name": name,
-                "venmo_handle": f"@{name.split()[0].lower()}",
+                "id": char.id,
+                "circle_id": DEMO_CIRCLE.id,
+                "name": char.name,
+                "venmo_handle": char.venmo_handle,
+                "bio": char.bio,
+                "role": "both" if char.role == "both" else char.role,
+                "dietary": char.dietary,
+                "preferred_stores": char.preferred_stores,
+                "availability": char.availability,
+                "address_unit": char.address_unit,
+                "address_floor": char.address_floor,
+                "address_buzzer": char.address_buzzer,
+                "address_notes": char.address_notes,
             }).execute()
-            users.append(user_response.data[0])
-            print(f"✅ Created user: {name}")
+            users_created.append(user_response.data[0])
+            print(f"✅ Created user: {char.name} (role: {char.role})")
 
-        shopper_id = users[0]["id"]
-        requester1_id = users[1]["id"]
-        requester2_id = users[2]["id"]
+        # Get user IDs
+        ana_id = ANA.id
+        ben_id = BEN.id
+        chloe_id = CHLOE.id
+        maya_id = MAYA.id
 
-        # Create a trip
-        depart_time = datetime.now() + timedelta(hours=2)
-        trip_response = supabase.table("trips").insert({
-            "shopper_id": shopper_id,
-            "circle_id": circle_id,
+        # ====================================================================
+        # TRIP 1: OPEN (waiting for requests)
+        # ====================================================================
+        depart_time_1 = datetime.now() + timedelta(hours=2)
+        trip1_response = supabase.table("trips").insert({
+            "shopper_id": ana_id,
+            "circle_id": DEMO_CIRCLE.id,
             "store": "Trader Joe's",
-            "depart_at": depart_time.isoformat(),
+            "depart_at": depart_time_1.isoformat(),
             "caps": {
                 "max_requesters": 6,
                 "max_dollars_per_person": 40.00,
@@ -76,69 +95,170 @@ def seed_demo():
             },
             "status": TripStatus.OPEN.value,
         }).execute()
-        trip_id = trip_response.data[0]["id"]
-        print(f"✅ Created trip: {trip_response.data[0]['store']}")
+        trip1_id = trip1_response.data[0]["id"]
+        print(f"\n✅ Created OPEN trip: {trip1_response.data[0]['store']}")
 
-        # Create requests with items for requester 1
-        items_1 = [
-            {"name": "Organic Bananas", "qty": 2, "max_price": 3.99, "section": StoreSection.PRODUCE.value},
-            {"name": "Greek Yogurt", "qty": 1, "max_price": 6.99, "section": StoreSection.DAIRY.value},
-            {"name": "Whole Wheat Bread", "qty": 1, "max_price": 4.49, "section": StoreSection.BAKERY.value},
+        # Ben's request for trip 1
+        ben_items = [
+            {"name": "Oat Milk", "qty": 1, "max_price": 3.99},
+            {"name": "Bananas", "qty": 2, "max_price": 1.98},
+            {"name": "Greek Yogurt", "qty": 2, "max_price": 5.98},
         ]
-
         request1_response = supabase.table("requests").insert({
-            "trip_id": trip_id,
-            "requester_id": requester1_id,
+            "trip_id": trip1_id,
+            "requester_id": ben_id,
             "status": RequestStatus.PENDING.value,
         }).execute()
         request1_id = request1_response.data[0]["id"]
 
-        for item in items_1:
+        for item in ben_items:
+            section = "dairy" if "Milk" in item["name"] or "Yogurt" in item["name"] else "produce"
             supabase.table("items").insert({
                 "request_id": request1_id,
-                "trip_id": trip_id,
+                "trip_id": trip1_id,
                 "name": item["name"],
                 "qty": item["qty"],
                 "max_price": item["max_price"],
-                "section": item["section"],
+                "section": section,
                 "status": ItemStatus.PENDING.value,
             }).execute()
+        print(f"   - Ben's request (3 items, ${sum(i['max_price'] for i in ben_items):.2f})")
 
-        print(f"✅ Created request 1 with {len(items_1)} items")
-
-        # Create requests with items for requester 2
-        items_2 = [
-            {"name": "Almond Butter", "qty": 1, "max_price": 8.99, "section": StoreSection.PANTRY.value},
-            {"name": "Dark Chocolate", "qty": 2, "max_price": 2.99, "section": StoreSection.PANTRY.value},
-            {"name": "Frozen Berries", "qty": 1, "max_price": 4.99, "section": StoreSection.FROZEN.value},
+        # Chloe's request for trip 1
+        chloe_items = [
+            {"name": "Dark Chocolate Almonds", "qty": 1, "max_price": 3.99},
+            {"name": "Organic Spinach", "qty": 1, "max_price": 3.99},
+            {"name": "Salmon Fillet", "qty": 1, "max_price": 9.99},
         ]
-
         request2_response = supabase.table("requests").insert({
-            "trip_id": trip_id,
-            "requester_id": requester2_id,
+            "trip_id": trip1_id,
+            "requester_id": chloe_id,
             "status": RequestStatus.PENDING.value,
         }).execute()
         request2_id = request2_response.data[0]["id"]
 
-        for item in items_2:
+        for item in chloe_items:
+            if "Spinach" in item["name"]:
+                section = "produce"
+            elif "Salmon" in item["name"]:
+                section = "frozen"
+            else:
+                section = "snacks"
             supabase.table("items").insert({
                 "request_id": request2_id,
-                "trip_id": trip_id,
+                "trip_id": trip1_id,
                 "name": item["name"],
                 "qty": item["qty"],
                 "max_price": item["max_price"],
-                "section": item["section"],
+                "section": section,
                 "status": ItemStatus.PENDING.value,
             }).execute()
+        print(f"   - Chloe's request (3 items, ${sum(i['max_price'] for i in chloe_items):.2f})")
 
-        print(f"✅ Created request 2 with {len(items_2)} items")
+        # ====================================================================
+        # TRIP 2: SHOPPING (shopper is out)
+        # ====================================================================
+        depart_time_2 = datetime.now() - timedelta(minutes=30)
+        trip2_response = supabase.table("trips").insert({
+            "shopper_id": ana_id,
+            "circle_id": DEMO_CIRCLE.id,
+            "store": "Costco",
+            "depart_at": depart_time_2.isoformat(),
+            "caps": {
+                "max_requesters": 6,
+                "max_dollars_per_person": 50.00,
+                "max_items_per_person": 10,
+            },
+            "status": TripStatus.SHOPPING.value,
+        }).execute()
+        trip2_id = trip2_response.data[0]["id"]
+        print(f"\n✅ Created SHOPPING trip: {trip2_response.data[0]['store']}")
+
+        # Maya's request for trip 2 (ACCEPTED)
+        maya_items = [
+            {"name": "Organic Coffee", "qty": 1, "max_price": 12.99},
+            {"name": "Frozen Berries", "qty": 2, "max_price": 9.98},
+            {"name": "Peanut Butter", "qty": 1, "max_price": 3.99},
+        ]
+        request3_response = supabase.table("requests").insert({
+            "trip_id": trip2_id,
+            "requester_id": maya_id,
+            "status": RequestStatus.ACCEPTED.value,
+        }).execute()
+        request3_id = request3_response.data[0]["id"]
+
+        for item in maya_items:
+            if "Coffee" in item["name"]:
+                section = "beverages"
+            elif "Berries" in item["name"]:
+                section = "frozen"
+            else:
+                section = "pantry"
+            supabase.table("items").insert({
+                "request_id": request3_id,
+                "trip_id": trip2_id,
+                "name": item["name"],
+                "qty": item["qty"],
+                "max_price": item["max_price"],
+                "section": section,
+                "status": ItemStatus.PURCHASED.value,
+            }).execute()
+        print(f"   - Maya's request (3 items, ACCEPTED and purchased, ${sum(i['max_price'] for i in maya_items):.2f})")
+
+        # ====================================================================
+        # TRIP 3: DONE (completed trip)
+        # ====================================================================
+        depart_time_3 = datetime.now() - timedelta(hours=2)
+        trip3_response = supabase.table("trips").insert({
+            "shopper_id": ana_id,
+            "circle_id": DEMO_CIRCLE.id,
+            "store": "Whole Foods",
+            "depart_at": depart_time_3.isoformat(),
+            "caps": {
+                "max_requesters": 4,
+                "max_dollars_per_person": 35.00,
+                "max_items_per_person": 6,
+            },
+            "status": TripStatus.DONE.value,
+        }).execute()
+        trip3_id = trip3_response.data[0]["id"]
+        print(f"\n✅ Created DONE trip: {trip3_response.data[0]['store']}")
+
+        # Ben's completed request for trip 3
+        ben_trip3_items = [
+            {"name": "Almond Flour", "qty": 1, "max_price": 5.99},
+            {"name": "Organic Eggs", "qty": 1, "max_price": 3.99},
+        ]
+        request4_response = supabase.table("requests").insert({
+            "trip_id": trip3_id,
+            "requester_id": ben_id,
+            "status": RequestStatus.COMPLETED.value,
+        }).execute()
+        request4_id = request4_response.data[0]["id"]
+
+        for item in ben_trip3_items:
+            if "Eggs" in item["name"]:
+                section = "dairy"
+            else:
+                section = "pantry"
+            supabase.table("items").insert({
+                "request_id": request4_id,
+                "trip_id": trip3_id,
+                "name": item["name"],
+                "qty": item["qty"],
+                "max_price": item["max_price"],
+                "section": section,
+                "status": ItemStatus.DELIVERED.value,
+            }).execute()
+        print(f"   - Ben's request (2 items, COMPLETED, ${sum(i['max_price'] for i in ben_trip3_items):.2f})")
 
         print("\n✅ Demo data seeded successfully!")
         print(f"\n📝 Demo Credentials:")
-        print(f"Circle Invite Code: DEMO01")
-        print(f"\nUsers:")
-        for user in users:
-            print(f"  - {user['name']}")
+        print(f"  Circle: {DEMO_CIRCLE.name}")
+        print(f"  Invite Code: {DEMO_CIRCLE.invite_code}")
+        print(f"\n👥 Users:")
+        for char in ALL_CHARACTERS:
+            print(f"  - {char.name} ({char.role}) · email: {char.email}")
 
     except Exception as e:
         print(f"❌ Error seeding data: {e}")

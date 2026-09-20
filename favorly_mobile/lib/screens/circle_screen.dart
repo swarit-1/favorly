@@ -3,14 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/demo_cast.dart';
 import '../state/demo_store.dart';
 import '../theme/tokens.dart';
 import '../util/format.dart';
 import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
+import '../widgets/insurance_badge.dart';
 import '../widgets/page.dart';
 import '../widgets/people.dart';
+import '../widgets/referral_card.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/unlock_progress.dart';
 
 /// Members and the reciprocity ledger. Plain counts, no scores.
 class CircleScreen extends ConsumerWidget {
@@ -38,29 +42,82 @@ class CircleScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
         ],
+        UnlockProgressWidget(status: store.unlocksFor(DEMO_CIRCLE_ID)),
+        const SizedBox(height: 16),
+        if (store.unlocksFor(DEMO_CIRCLE_ID).claimedUnlocks.isNotEmpty) ...[
+          SectionHeader('Claimed Rewards'),
+          Column(
+            children: [
+              for (final unlock in store.unlocksFor(DEMO_CIRCLE_ID).claimedUnlocks)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: UnlockRewardCard(unlock: unlock),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
+        ReferralCard(
+          stats: store.referralStatsFor(store.meId),
+          onCopyCode: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            final code = store.referralStatsFor(store.meId).inviteCode;
+            await Clipboard.setData(ClipboardData(text: code));
+            messenger.showSnackBar(
+              const SnackBar(content: Text('Code copied. Share it!')),
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        if (store.referralStatsFor(store.meId).referrals.isNotEmpty) ...[
+          SectionHeader('Referral Rewards'),
+          Column(
+            children: [
+              for (final reward in store.referralStatsFor(store.meId).referrals)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: ReferralRewardTile(
+                    reward: reward,
+                    referreeName: store.memberById(reward.referreeId).name,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
         Panel(
           dividerIndent: 68,
           children: [
             for (final row in rows)
-              PanelRow(
-                leading: Avatar(store.memberById(row.memberId), size: 40),
-                title: store.memberById(row.memberId).name +
-                    (row.memberId == store.meId ? ' (you)' : ''),
-                subtitle: '${plural(row.tripsRun, 'trip')} run · '
-                    '${plural(row.favorsReceived, 'favor')} received',
-                trailing: row.dollarsCarried <= 0
-                    ? null
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(money(row.dollarsCarried), style: FType.moneySmall),
-                          Text(
-                            'carried',
-                            style: FType.caption.copyWith(color: FColors.inkTertiary),
+              Column(
+                children: [
+                  PanelRow(
+                    leading: Avatar(store.memberById(row.memberId), size: 40),
+                    title: store.memberById(row.memberId).name +
+                        (row.memberId == store.meId ? ' (you)' : ''),
+                    subtitle: '${plural(row.tripsRun, 'trip')} run · '
+                        '${plural(row.favorsReceived, 'favor')} received',
+                    trailing: row.dollarsCarried <= 0
+                        ? null
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(money(row.dollarsCarried), style: FType.moneySmall),
+                              Text(
+                                'carried',
+                                style: FType.caption.copyWith(color: FColors.inkTertiary),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                  ),
+                  if (store.isInsuranceEligible(row.memberId))
+                    Padding(
+                      padding: const EdgeInsets.only(left: 68, top: 8, bottom: 8),
+                      child: InsuranceBadge(
+                          status: store.insuranceFor(row.memberId)),
+                    ),
+                ],
               ),
           ],
         ),

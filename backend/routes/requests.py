@@ -5,22 +5,13 @@ from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
-import os
-from supabase import create_client, Client
 
+from db.client import get_supabase_client
 from shared.contracts.models import Request as RequestModel, RequestStatus, Item, ItemStatus, StoreSection
 from shared.timestamps import parse_timestamp
+from shared.notify import write_notification
 
 router = APIRouter(prefix="/requests", tags=["requests"])
-
-
-def get_supabase_client() -> Client:
-    """Get Supabase client."""
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
-    return create_client(url, key)
 
 
 class CreateItemRequest(BaseModel):
@@ -209,6 +200,15 @@ async def update_request_status(request_id: UUID, req: UpdateRequestStatusReques
     supabase = get_supabase_client()
 
     try:
+        # Get request first to access requester_id and trip_id
+        request_response = supabase.table("requests").select("*").eq("id", str(request_id)).execute()
+        if not request_response.data:
+            raise HTTPException(status_code=404, detail="Request not found")
+
+        request_data_before = request_response.data[0]
+        requester_id = request_data_before["requester_id"]
+        trip_id = request_data_before["trip_id"]
+
         # Update status
         update_response = supabase.table("requests").update({
             "status": req.status.value,
@@ -218,6 +218,17 @@ async def update_request_status(request_id: UUID, req: UpdateRequestStatusReques
             raise HTTPException(status_code=404, detail="Request not found")
 
         request_data = update_response.data[0]
+
+        # Fan-out notification on status change to "accepted"
+        if req.status == RequestStatus.ACCEPTED:
+            write_notification(
+                supabase,
+                UUID(requester_id),
+                UUID(trip_id),
+                "request_accepted",
+                title="Your request was accepted!",
+                body="The shopper will pick up your items",
+            )
 
         # Get items
         items_response = supabase.table("items").select("*").eq("request_id", str(request_id)).execute()

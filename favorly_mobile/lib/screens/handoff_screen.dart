@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
+import '../screens/survey_screen.dart';
 import '../state/demo_store.dart';
 import '../util/format.dart';
-import '../util/nav.dart';
 import '../widgets/buttons.dart';
 import '../widgets/capture.dart';
 import '../widgets/page.dart';
@@ -26,13 +26,11 @@ class _HandoffScreenState extends ConsumerState<HandoffScreen> {
 
   void _deliver() {
     ref.read(storeProvider).confirmHandoff(widget.tripId);
-    final messenger = ScaffoldMessenger.of(context);
-    final tabs = ref.read(tabProvider.notifier);
-    popToRoot(context);
-    messenger.showSnackBar(SnackBar(
-      content: const Text('Delivered. Ledger updated.'),
-      action: SnackBarAction(label: 'See ledger', onPressed: () => tabs.state = FTab.circle),
-    ));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SurveyScreen(tripId: widget.tripId),
+      ),
+    );
   }
 
   @override

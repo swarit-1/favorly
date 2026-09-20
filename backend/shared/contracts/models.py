@@ -63,6 +63,12 @@ class SubstitutionDecision(str, Enum):
     TIMEOUT_SKIP = "timeout_skip"
 
 
+class ShopperRole(str, Enum):
+    SHOPPER = "shopper"
+    REQUESTER = "requester"
+    BOTH = "both"
+
+
 STORE_SECTION_ORDER = [
     StoreSection.PRODUCE,
     StoreSection.BAKERY,
@@ -81,6 +87,15 @@ STORE_SECTION_ORDER = [
 # DOMAIN ENTITIES
 # ============================================================================
 
+class Address(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    unit: Optional[str] = None
+    floor: Optional[str] = None
+    buzzer: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class User(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -88,7 +103,27 @@ class User(BaseModel):
     circle_id: UUID
     name: str
     venmo_handle: Optional[str] = None
+    bio: Optional[str] = Field(None, max_length=120)
+    photo_url: Optional[str] = None
+    role: ShopperRole = ShopperRole.BOTH
+    address: Optional[Address] = None
+    dietary: List[str] = Field(default_factory=list)
+    preferred_stores: List[str] = Field(default_factory=list)
+    availability: List[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    bio: Optional[str] = Field(None, max_length=120)
+    photo_url: Optional[str] = None
+    role: Optional[ShopperRole] = None
+    address: Optional[Address] = None
+    dietary: Optional[List[str]] = None
+    preferred_stores: Optional[List[str]] = None
+    availability: Optional[List[str]] = None
 
 
 class Circle(BaseModel):
@@ -341,3 +376,70 @@ class SubstitutionPrompt(BaseModel):
     decision: Optional[SubstitutionDecision] = None
     chosen_index: Optional[int] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================================================
+# EXPERIENCE RATINGS & MEMBER COMPATIBILITY
+# ============================================================================
+
+class ExperienceRating(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    id: UUID = Field(default_factory=uuid4)
+    trip_id: UUID
+    circle_id: UUID
+    rated_by_id: UUID
+    rated_id: UUID
+    overall_rating: int = Field(ge=1, le=5)
+    reliability_rating: Optional[int] = Field(None, ge=1, le=5)
+    accuracy_rating: Optional[int] = Field(None, ge=1, le=5)
+    communication_rating: Optional[int] = Field(None, ge=1, le=5)
+    comment: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MemberCompatibility(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    id: UUID = Field(default_factory=uuid4)
+    circle_id: UUID
+    member_id_1: UUID
+    member_id_2: UUID
+    score: Decimal = Field(ge=0, le=1)
+    trips_worked_together: int = Field(ge=0, default=0)
+    average_rating: Optional[Decimal] = Field(None, ge=1, le=5)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================================================
+# VISION ANALYSIS MODELS
+# ============================================================================
+
+class AnalysisType(str, Enum):
+    PANTRY = "pantry"
+    SHELF = "shelf"
+    RECEIPT = "receipt"
+    DAMAGE = "damage"
+    YARD = "yard"
+    PET = "pet"
+    CLEANING = "cleaning"
+
+
+class PantryScan(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    id: UUID = Field(default_factory=uuid4)
+    user_id: Optional[UUID] = None
+    trip_id: Optional[UUID] = None
+    detected_items: List[dict] = Field(default_factory=list)
+    low_or_empty: List[str] = Field(default_factory=list)
+    summary: Optional[str] = None
+    expiration_warnings: List[dict] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    image_paths: List[str] = Field(default_factory=list)
+    analysis_type: AnalysisType = AnalysisType.PANTRY
+    confidence_score: Optional[float] = Field(None, ge=0, le=1)
+    vision_model: str = "muse-spark-1.3"
+    is_placeholder: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None

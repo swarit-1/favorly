@@ -23,7 +23,18 @@ CREATE TABLE IF NOT EXISTS users (
   circle_id UUID NOT NULL,
   name VARCHAR NOT NULL,
   venmo_handle VARCHAR,
-  created_at TIMESTAMP DEFAULT NOW()
+  bio TEXT,
+  photo_url TEXT,
+  role VARCHAR DEFAULT 'both' CHECK (role IN ('shopper', 'requester', 'both')),
+  address_unit VARCHAR,
+  address_floor VARCHAR,
+  address_buzzer VARCHAR,
+  address_notes TEXT,
+  dietary TEXT[] DEFAULT '{}',
+  preferred_stores TEXT[] DEFAULT '{}',
+  availability TEXT[] DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Circles
@@ -143,6 +154,37 @@ CREATE TABLE IF NOT EXISTS cached_vision_responses (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Messages (for trip chat)
+CREATE TABLE IF NOT EXISTS messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  sender_id UUID NOT NULL REFERENCES users(id),
+  body TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Notifications
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  trip_id UUID REFERENCES trips(id) ON DELETE SET NULL,
+  kind VARCHAR NOT NULL CHECK (kind IN ('message', 'request', 'settlement', 'trip_update')),
+  title VARCHAR NOT NULL,
+  body TEXT NOT NULL,
+  read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- User Locations (for real-time tracking during trips)
+CREATE TABLE IF NOT EXISTS user_locations (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  circle_id UUID NOT NULL REFERENCES circles(id),
+  trip_id UUID REFERENCES trips(id) ON DELETE SET NULL,
+  lat NUMERIC(9, 6) NOT NULL,
+  lng NUMERIC(9, 6) NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Create Indexes
 CREATE INDEX IF NOT EXISTS idx_users_circle_id ON users(circle_id);
 CREATE INDEX IF NOT EXISTS idx_circles_invite_code ON circles(invite_code);
@@ -156,6 +198,9 @@ CREATE INDEX IF NOT EXISTS idx_receipts_trip_id ON receipts(trip_id);
 CREATE INDEX IF NOT EXISTS idx_settlements_trip_requester ON settlements(trip_id, requester_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_circle_user ON ledger_events(circle_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_cached_vision_key_surface ON cached_vision_responses(cache_key, surface);
+CREATE INDEX IF NOT EXISTS idx_messages_trip_created ON messages(trip_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_locations_circle ON user_locations(circle_id);
 """
 
 try:
@@ -174,6 +219,8 @@ try:
     print("   - requests")
     print("   - substitution_prompts")
     print("   - settlements")
+    print("   - messages")
+    print("   - notifications")
     print("\n4. Run: python backend/seed/seed_demo.py")
     print("5. Run: cd backend && python -m uvicorn app:app --reload --port 8000")
 

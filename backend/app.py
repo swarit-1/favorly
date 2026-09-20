@@ -1,6 +1,7 @@
 """Favorly FastAPI application."""
 
 import os
+import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -14,18 +15,37 @@ from shared.contracts import models
 # Load environment variables from .env
 load_dotenv()
 
+# Configure logging to print to stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:     %(message)s',
+)
+
 
 # ============================================================================
 # SUPABASE CLIENT
 # ============================================================================
 
 def get_supabase_client() -> Client:
-    """Get Supabase client."""
+    """Get Supabase client (anon key for user-facing operations)."""
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_KEY")
     if not url or not key:
         raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
     return create_client(url, key)
+
+
+def get_supabase_admin_client() -> Client:
+    """Get Supabase admin client (service role key for backend operations)."""
+    url = os.getenv("SUPABASE_URL")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not service_key:
+        # Fall back to anon key if service role not available
+        key = os.getenv("SUPABASE_KEY")
+        if not url or not key:
+            raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
+        return create_client(url, key)
+    return create_client(url, service_key)
 
 
 # ============================================================================
@@ -43,6 +63,13 @@ async def lifespan(app: FastAPI):
         response = supabase.table("users").select("*").limit(1).execute()
         print("✅ Supabase connected")
         print("\n✅ All systems ready!")
+
+        # Log all registered routes
+        print("\n📡 Registered routes:")
+        for route in app.routes:
+            if hasattr(route, 'path'):
+                methods = getattr(route, 'methods', ['N/A'])
+                print(f"  - {route.path} [{methods}]")
     except Exception as e:
         print(f"\n❌ Startup failed: {e}")
         raise
@@ -67,9 +94,21 @@ app = FastAPI(
 
 
 # Add CORS middleware
+def get_allowed_origins() -> list[str]:
+    """Get CORS allowed origins from environment or default based on environment."""
+    cors_origins = os.getenv("CORS_ALLOWED_ORIGINS")
+    if cors_origins:
+        return [origin.strip() for origin in cors_origins.split(",")]
+    # Default: allow all origins in development, none in production
+    env = os.getenv("ENVIRONMENT", "development")
+    if env == "development":
+        return ["*"]
+    return []
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For demo; restrict in production
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,15 +137,38 @@ async def health_check():
 # ROUTES
 # ============================================================================
 
-from routes import auth, trips, requests, users, merged_list
+from routes import auth, trips, requests, users, merged_list, vision, experiences, messages, notifications, savings, storm, insurance, unlocks
 from routes.linq_webhook import router as linq_router
 
+print("\n📡 Registering routers...")
 app.include_router(auth.router)
+print("✅ Auth router registered")
 app.include_router(trips.router)
+print("✅ Trips router registered")
 app.include_router(requests.router)
+print("✅ Requests router registered")
 app.include_router(users.router)
+print("✅ Users router registered")
 app.include_router(merged_list.router)
+print("✅ Merged list router registered")
+app.include_router(vision.router)
+print("✅ Vision router registered")
+app.include_router(experiences.router)
+print("✅ Experiences router registered")
+app.include_router(messages.router)
+print("✅ Messages router registered")
+app.include_router(notifications.router)
+print("✅ Notifications router registered")
+app.include_router(savings.router)
+print("✅ Savings router registered")
+app.include_router(storm.router)
+print("✅ Storm mode router registered")
+app.include_router(insurance.router)
+print("✅ Insurance router registered")
+app.include_router(unlocks.router)
+print("✅ Unlocks router registered")
 app.include_router(linq_router)  # Linq agent: inbound texts -> matching -> reply
+print("✅ Linq router registered\n")
 
 @app.post("/trips", tags=["trips"])
 async def create_trip(trip: dict):
@@ -196,6 +258,27 @@ async def get_circle_ledger(circle_id: str):
 # CUSTOM OPENAPI SCHEMA (for TypeScript generation)
 # ============================================================================
 
+def get_openapi_servers() -> list[dict]:
+    """Get OpenAPI server URLs from environment."""
+    servers = []
+
+    # Add development server
+    dev_server = os.getenv("DEV_SERVER_URL", "http://localhost:8000")
+    if dev_server:
+        servers.append({"url": dev_server, "description": "Development"})
+
+    # Add production server if configured
+    prod_server = os.getenv("PROD_SERVER_URL")
+    if prod_server:
+        servers.append({"url": prod_server, "description": "Production"})
+
+    # If no servers configured, default to localhost
+    if not servers:
+        servers.append({"url": "http://localhost:8000", "description": "Development"})
+
+    return servers
+
+
 def custom_openapi():
     """Generate OpenAPI schema."""
     if app.openapi_schema:
@@ -208,11 +291,8 @@ def custom_openapi():
         routes=app.routes,
     )
 
-    # Add server URLs
-    openapi_schema["servers"] = [
-        {"url": "http://localhost:8000", "description": "Development"},
-        {"url": "https://favorly-api.fly.dev", "description": "Production"},
-    ]
+    # Add server URLs from environment
+    openapi_schema["servers"] = get_openapi_servers()
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
