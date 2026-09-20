@@ -220,7 +220,7 @@ EXPECTED_SEED_CLAIMS = {
     "money is tight this month so I'm sticking to a list": {"budget conscious"},
     "I fix bikes for fun": {"bike repair"},
     "retired carpenter, forty years on the job": {"handy with tools"},
-    "I have every tool you can think of": {"tools"},
+    "I have every tool you can think of, drill included": {"tools", "drill"},
     "I'm around most days": {"free afternoons"},
     "I have a projector and do movie nights": {"projector"},
     "happy to help with speakers and TVs": {"audio setup"},

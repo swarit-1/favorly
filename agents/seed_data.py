@@ -142,7 +142,7 @@ BLOCK_MESSAGES: dict[str, list[str]] = {
     ],
     "Tom Becker": [
         "retired carpenter, forty years on the job",
-        "I have every tool you can think of",
+        "I have every tool you can think of, drill included",
         "I'm around most days",
     ],
     "Lina Haddad": [
@@ -195,6 +195,10 @@ BLOCK_KNOWS = [
     ("Dev Patel", "Noah Kim"),         # chess
     ("Ana Delgado", "Chloe Marchetti"),
     ("Priya Raman", "Ben Okafor"),     # music
+    # PRD-DEVIATION (seed tune, weights untouched): the two tool people know
+    # each other, so Tom clears slot three on "help me put up a shelf" as the
+    # Gate 2 criteria require. Tom stays otherwise almost disconnected.
+    ("Tom Becker", "Marcus Hill"),
 ]
 
 # (person, body, category, title, requires, when_text, hours_ago)

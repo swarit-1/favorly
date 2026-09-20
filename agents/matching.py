@@ -213,6 +213,8 @@ def _headline_for(claim: dict) -> str:
     if claim.get("kind") == "has_item":
         return f"Has a {label}"
     if claim.get("kind") == "skill":
+        if label.startswith(("handy", "good with")):
+            return label[0].upper() + label[1:]
         return f"Can help with {label}"
     if claim.get("kind") == "interest":
         return f"Also into {label}"
@@ -393,7 +395,8 @@ def availability_signal(
 ) -> float:
     """users.availability + availability claims vs when_text + today.
     Match 1.0, unknown 0.5, conflict 0.2."""
-    tokens = {a.strip().lower()[:3] for a in person_availability if a}
+    _days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+    tokens = {a.strip().lower()[:3] for a in person_availability if a} & _days
     full = {a.strip().lower() for a in person_availability if a}
     claim_text = " ".join(
         (c.get("canonical") or c.get("raw_label") or "").lower()
@@ -585,7 +588,7 @@ def template_reason(c: dict) -> str:
         bits.append(f"this would be {person.first_name}'s first favor here")
     else:
         bits.append(f"{person.first_name} is {c['where']}")
-    lead = bits[0]
+    lead = bits[0][0].upper() + bits[0][1:] if bits[0] else ""
     if len(bits) > 1:
         return f"{lead}, and {bits[1]}."
     return f"{lead}."
