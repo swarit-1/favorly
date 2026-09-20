@@ -10,9 +10,6 @@ pydantic-settings>=2.2.0
 # Supabase
 supabase>=2.4.0
 
-# Direct Postgres connection for schema migration (see db/__init__.py)
-asyncpg>=0.29.0
-
 # Environment
 python-dotenv>=1.0.0
 

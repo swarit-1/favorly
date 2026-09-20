@@ -59,6 +59,3 @@ class RecommendationsOut(BaseModel):
 class SeedIn(BaseModel):
     scenario: str = "warm"  # warm | cold
 
-
-class TickIn(BaseModel):
-    steps: int = 1

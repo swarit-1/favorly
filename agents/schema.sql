@@ -87,16 +87,6 @@ CREATE TABLE IF NOT EXISTS needs (
 CREATE INDEX IF NOT EXISTS needs_status_idx ON needs (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS needs_person_idx ON needs (person_id);
 
--- Cached topology so you aren't recomputing per request.
-CREATE TABLE IF NOT EXISTS graph_metrics (
-  person_id     UUID PRIMARY KEY REFERENCES people(id),
-  degree        INT NOT NULL,
-  betweenness   REAL NOT NULL,
-  clustering    REAL NOT NULL,
-  give_balance  REAL NOT NULL DEFAULT 0,  -- internal only, never exposed via API
-  computed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 -- Canonical vocabulary for entity resolution. Seeded at startup, grows over time.
 CREATE TABLE IF NOT EXISTS canonical_labels (
   canonical   TEXT PRIMARY KEY,

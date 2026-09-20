@@ -16,7 +16,6 @@ import asyncpg
 
 import edges as edges_mod
 import extraction
-import graph_metrics
 import canonicalization
 
 RESIDENTS = [
@@ -70,7 +69,7 @@ SEED_NEEDS = [
     ("Jordan Reyes", "out of coffee and don't know the area yet, any chance someone can grab some?", 2),
 ]
 
-_SEED_TABLES = ("needs", "graph_metrics", "edges", "claims", "events", "people")
+_SEED_TABLES = ("needs", "edges", "claims", "events", "people")
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +170,6 @@ async def build_demo_history(conn: asyncpg.Connection) -> dict:
         )
         needs_made += 1
 
-    await graph_metrics.recompute_all(conn)
     return {
         "people_created": created, "claims_extracted": claims_made,
         "favors_written": favors, "needs_posted": needs_made,
@@ -241,5 +239,4 @@ async def seed(conn: asyncpg.Connection, scenario: str = "warm") -> dict:
             pid, body, str(event_row["id"]), created_at,
         )
 
-    await graph_metrics.recompute_all(conn)
     return {"scenario": "warm", "person_ids": person_ids}

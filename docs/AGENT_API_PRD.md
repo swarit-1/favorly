@@ -7,6 +7,30 @@ typed in the service's OpenAPI schema at `/openapi.json` (browsable at `/docs`).
 
 ---
 
+## 0. Running it
+
+```bash
+cp .env.example .env          # at the REPO ROOT; python-dotenv walks up to find it
+cd agents
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python app.py                 # :8010, applies schema.sql on startup
+```
+
+Needs Postgres with pgvector. Locally:
+```bash
+docker run -d --name trellis-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=trellis \
+  -p 5432:5432 pgvector/pgvector:pg16
+```
+
+`MOCK_LLM=1` (the `.env.example` default) runs extraction and recommendation
+on deterministic rules with **zero API calls** — the service is fully
+exercisable without a key. Set `MOCK_LLM=0` plus `LLM_API_KEY` for real
+OpenAI. After switching, run `POST /admin/reextract`: mock embeddings aren't
+comparable to real ones, so existing claims must be rebuilt from the event log.
+
+`backend/` keeps its own `.env` (it needs `PORT=8000` where this needs 8010).
+
 ## 1. What this service does
 
 It answers one product question: **"which favors should I do, and why?"**

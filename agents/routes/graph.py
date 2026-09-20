@@ -29,7 +29,7 @@ def _clusters(g: nx.Graph) -> dict[str, int]:
 
 @router.get("/graph")
 async def get_graph(since: Optional[datetime] = Query(default=None), conn: asyncpg.Connection = Depends(get_conn)):
-    g = await graph_metrics.ensure_fresh(conn)
+    g = await graph_metrics.load_graph(conn)
     cluster_of = _clusters(g)
     degree = dict(g.degree())
 

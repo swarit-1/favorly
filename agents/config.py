@@ -49,8 +49,6 @@ class Settings:
 
     PROFILE_CLAIM_CAP: int = 8
 
-    # graph_metrics cache TTL
-    METRICS_CACHE_SECONDS: int = 60
 
 
 settings = Settings()
