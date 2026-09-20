@@ -22,8 +22,18 @@ def _headers() -> dict:
     }
 
 
+def _valid_chat_id(chat_id: Optional[str]) -> bool:
+    try:
+        import uuid
+        return bool(chat_id) and bool(uuid.UUID(chat_id))
+    except ValueError:
+        return False
+
+
 async def send_reply(text: str, chat_id: Optional[str] = None, to: Optional[str] = None) -> None:
     """Reply in an existing chat when we have its id, else start/reuse one by number."""
+    if not _valid_chat_id(chat_id):
+        chat_id = None  # Linq requires UUID chat ids; fall back to the number
     if not os.getenv("LINQ_API_KEY"):
         print(f"[linq:dry-run] reply to {chat_id or to}:\n{text}\n", flush=True)
         return

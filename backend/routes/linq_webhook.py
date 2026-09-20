@@ -56,7 +56,10 @@ async def linq_webhook(request: Request, background: BackgroundTasks):
 
 async def _process(sender: str, chat_id: str | None, text: str) -> None:
     reply, notifications = handle_message(store, sender, text)
-    reply = await _sync_trellis(reply)
+    try:
+        reply = await _sync_trellis(reply)
+    except Exception as e:  # Trellis drift must never block the reply
+        print(f"[trellis-sync] skipped: {e}", flush=True)
     await send_reply(reply, chat_id=chat_id, to=sender)
     for phone, message in notifications:
         await notify(phone, message)
@@ -65,14 +68,15 @@ async def _process(sender: str, chat_id: str | None, text: str) -> None:
 async def _sync_trellis(reply: str) -> str:
     """Forward the drained handler events to Trellis; append its person-aware
     reasons when the user asked for recommendations. Any Trellis failure is
-    swallowed by the client, so the SMS flow never depends on it."""
+    swallowed, so the SMS flow never depends on it.
+
+    Since the Supabase-identity rework, Trellis has no POST /people — only
+    people with a real `users` row exist there. SMS-only texters therefore
+    can't be mirrored; their needs FK-fail server-side and are skipped."""
     for event in store.drain_events():
         kind = event[0]
         if kind == "person":
-            profile = event[1]
-            await trellis.register_person(
-                profile.user.id, profile.user.name, profile.phone or None
-            )
+            continue  # no Trellis registration anymore (identity = Supabase users row)
         elif kind == "ask":
             _, ask, matched_trip, raw_text = event
             ask.trellis_need_id = await trellis.post_need(ask.user_id, raw_text)
