@@ -100,8 +100,8 @@ def _handle_ask(store: AgentStore, profile: Profile, parsed: ParsedIntent, now: 
         store.attach_ask_to_trip(ask, trip)
         shopper = store.name_of(trip.shopper_id)
         reply = (
-            f"You're in luck — {shopper} is heading to {trip.store} at "
-            f"{_fmt_time(trip.depart_at)} (match score {score:.2f}). "
+            f"You're in luck, {shopper} is heading to {trip.store} at "
+            f"{_fmt_time(trip.depart_at)}. "
             f"I added {_fmt_items(ask)} to their run. "
             f"You'll settle up via Venmo after the receipt."
         )
@@ -190,10 +190,7 @@ def _handle_recommendations(store: AgentStore, profile: Profile, now: datetime) 
             lines.append("Also a good fit for this run:")
             for ask_id, score in recs[:3]:
                 ask = asks_by_id[ask_id]
-                lines.append(
-                    f"• {store.name_of(ask.user_id)} needs {_fmt_items(ask)} "
-                    f"(match {score:.2f})"
-                )
+                lines.append(f"• {store.name_of(ask.user_id)} needs {_fmt_items(ask)}")
         if len(lines) == 1:
             lines.append("Nothing attached yet — I'll match favors as they come in.")
         return "\n".join(lines)

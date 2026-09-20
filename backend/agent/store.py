@@ -8,8 +8,6 @@ matching trip is open. Swap for Supabase later without changing handlers.
 from __future__ import annotations
 
 import json
-import os
-import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -74,29 +72,16 @@ class AgentStore:
         drained, self.events = self.events, []
         return drained
 
-        # Seed members get phones from LINQ_USER_PHONES="+1555...=Alice,+1555...=Bob"
-        env_map = _parse_phone_env(os.getenv("LINQ_USER_PHONES", ""))
-        for raw in seed["users"]:
-            user = User(**{k: v for k, v in raw.items()})
-            clean_name = re.sub(r"\s*\(.*\)", "", user.name)
-            user.name = clean_name
-            phone = env_map.get(clean_name.lower())
-            if phone:
-                self.profiles[phone] = Profile(user=user, phone=phone)
-            else:
-                # keep the member around without a phone (indexed by name key)
-                self.profiles[f"seed:{clean_name.lower()}"] = Profile(user=user, phone="")
-
     # -- users ---------------------------------------------------------------
 
     def user_for_phone(self, phone: str) -> Profile:
-        """Look up by phone, auto-registering unknown numbers as new members."""
-        if phone in self.profiles:
-            return self.profiles[phone]
-        user = User(circle_id=self.circle.id, name=f"Neighbor {phone[-4:]}")
-        profile = Profile(user=user, phone=phone)
-        self.profiles[phone] = profile
-        return profile
+        """Look up by phone. Delegates to the phone-to-person identity bridge
+        (backend/agent/identity.py): in-memory cache, then users.phone in
+        Supabase, then LINQ_USER_PHONES env resolution, then auto-provision.
+        Without Supabase env (tests) it falls back to a random in-memory UUID."""
+        from . import identity
+
+        return identity.resolve(self, phone)
 
     def rename(self, phone: str, name: str) -> None:
         self.profiles[phone].user.name = name.strip().title()
@@ -174,16 +159,6 @@ class AgentStore:
                 requester = self.name_of(r.requester_id)
                 out.extend((requester, item) for item in r.items)
         return out
-
-
-def _parse_phone_env(raw: str) -> dict[str, str]:
-    """'+15551234567=Alice,+15559876543=Bob' -> {'alice': '+1555...', ...}"""
-    mapping: dict[str, str] = {}
-    for pair in raw.split(","):
-        if "=" in pair:
-            phone, name = pair.split("=", 1)
-            mapping[name.strip().lower()] = phone.strip()
-    return mapping
 
 
 # Singleton used by the webhook route.

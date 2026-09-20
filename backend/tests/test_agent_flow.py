@@ -18,7 +18,8 @@ BOB = "+15550000002"
 
 @pytest.fixture()
 def store(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("MUSE_API_KEY", raising=False)
+    monkeypatch.delenv("SUPABASE_URL", raising=False)  # identity stays in-memory
     return AgentStore()
 
 
@@ -66,6 +67,17 @@ def test_parse_trip_with_time():
 
 def test_parse_recommendations():
     assert parse_rules("What should I pick up for people?", NOW).intent == "get_recommendations"
+
+
+def test_trip_regex_rejects_verb_phrases():
+    # "going to need help ..." is not a trip to "Need Help Moving A Couch"
+    p = parse_rules("I'm going to need help moving a couch", NOW)
+    assert p.intent != "offer_trip"
+    # a long non-store clause is not a store either
+    p = parse_rules("I'm heading to see whether anyone downstairs can help me", NOW)
+    assert p.intent != "offer_trip"
+    # real stores still parse
+    assert parse_rules("I'm going to Trader Joe's at 3", NOW).intent == "offer_trip"
 
 
 # -- full conversation ----------------------------------------------------------

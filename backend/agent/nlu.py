@@ -1,7 +1,10 @@
 """Intent parsing for inbound texts.
 
-Primary path: Claude with a strict JSON schema (set ANTHROPIC_API_KEY).
-Fallback: deterministic rules, so the whole flow works with no keys at all.
+Primary parsing has moved to Trellis POST /needs/intake (see favor_flow.py);
+this module remains as the Trellis-unreachable fallback. Its LLM path runs on
+Meta Muse (set MUSE_API_KEY -- same env vars and endpoint as the vision
+service). Final fallback: deterministic rules, so the whole flow works with
+no keys at all.
 """
 
 from __future__ import annotations
@@ -87,42 +90,58 @@ Extract the intent and fields per the schema. Rules:
 
 def parse_message(text: str, now: Optional[datetime] = None) -> ParsedIntent:
     now = now or datetime.now()
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if os.getenv("MUSE_API_KEY"):
         try:
-            return _parse_with_claude(text, now)
+            return _parse_with_muse(text, now)
         except Exception as exc:  # any API failure → deterministic fallback
-            print(f"[nlu] Claude parse failed ({exc}); using rule fallback")
+            print(f"[nlu] Muse parse failed ({exc}); using rule fallback")
     return parse_rules(text, now)
 
 
 # ---------------------------------------------------------------------------
-# Claude path
+# Meta Muse path (OpenAI-compatible chat completions -- same env vars and
+# endpoint shape as the vision service, see backend/services/vision_service.py)
 # ---------------------------------------------------------------------------
 
-def _parse_with_claude(text: str, now: datetime) -> ParsedIntent:
-    import anthropic
+def _parse_with_muse(text: str, now: datetime) -> ParsedIntent:
+    import httpx
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model="claude-opus-4-8",
-        max_tokens=1024,
-        system=_SYSTEM,
-        output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Current local time: {now.strftime('%A %I:%M %p')}\n"
-                    f"Message: {text}"
-                ),
-            }
-        ],
+    base_url = os.getenv("MUSE_API_BASE_URL", "https://api.meta.ai/v1")
+    model = os.getenv("MUSE_MODEL", "muse-spark-1.3")
+    system = (
+        _SYSTEM
+        + "\nReturn ONLY a JSON object matching this schema, no prose:\n"
+        + json.dumps(_SCHEMA)
     )
-    if response.stop_reason == "refusal":
-        return parse_rules(text, now)
-    payload = json.loads(
-        next(b.text for b in response.content if b.type == "text")
+    response = httpx.post(
+        f"{base_url}/chat/completions",
+        headers={
+            "Authorization": f"Bearer {os.environ['MUSE_API_KEY']}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Current local time: {now.strftime('%A %I:%M %p')}\n"
+                        f"Message: {text}"
+                    ),
+                },
+            ],
+            "max_tokens": 1024,
+            "temperature": 0.2,
+        },
+        timeout=4.0,
     )
+    response.raise_for_status()
+    content = response.json()["choices"][0]["message"]["content"] or ""
+    start, end = content.find("{"), content.rfind("}") + 1
+    if start == -1 or end <= start:
+        raise ValueError("no JSON object in Muse response")
+    payload = json.loads(content[start:end])
     intent = payload.get("intent") if payload.get("intent") in INTENTS else "help"
     return ParsedIntent(
         intent=intent,
@@ -160,6 +179,17 @@ _REC_HINTS = [
 ]
 _STATUS_HINTS = ["status", "what's open", "whats open", "open trips", "any trips", "what's going on"]
 
+# A "store" that starts with a verb is not a store: "I'm going to need help
+# moving a couch" must not become a trip to "Need Help Moving A Couch".
+_STORE_VERB_RE = re.compile(
+    r"^(?:need|help|be|have|get|do|make|move|build|borrow|ask|go|try|see)\b",
+    re.IGNORECASE,
+)
+
+
+def _plausible_store(raw: str) -> bool:
+    return not _STORE_VERB_RE.match(raw.strip()) and len(raw.strip().split()) <= 4
+
 
 def parse_rules(text: str, now: Optional[datetime] = None) -> ParsedIntent:
     now = now or datetime.now()
@@ -170,6 +200,8 @@ def parse_rules(text: str, now: Optional[datetime] = None) -> ParsedIntent:
         return ParsedIntent(intent="set_name", name=m.group(1))
 
     trip = _TRIP_RE.search(text) or _RUN_RE.search(text)
+    if trip and not _plausible_store(trip.group("store")):
+        trip = None
     if trip:
         # str.title() would capitalize after apostrophes ("Trader Joe'S")
         store_name = " ".join(

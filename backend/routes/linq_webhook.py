@@ -75,9 +75,7 @@ async def _sync_trellis(reply: str) -> str:
     can't be mirrored; their needs FK-fail server-side and are skipped."""
     for event in store.drain_events():
         kind = event[0]
-        if kind == "person":
-            continue  # no Trellis registration anymore (identity = Supabase users row)
-        elif kind == "ask":
+        if kind == "ask":
             _, ask, matched_trip, raw_text = event
             ask.trellis_need_id = await trellis.post_need(ask.user_id, raw_text)
             if matched_trip and ask.trellis_need_id:

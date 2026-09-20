@@ -23,7 +23,8 @@ import httpx
 logger = logging.getLogger("favorly.trellis_client")
 
 TRELLIS_BASE_URL = os.getenv("TRELLIS_BASE_URL", "http://localhost:8010")
-_TIMEOUT = httpx.Timeout(2.0)
+_TIMEOUT = httpx.Timeout(2.0)      # fire-and-forget posts
+_LONG = httpx.Timeout(8.0)         # intake, helpers, state -- ranking calls
 
 
 async def _post(path: str, payload: dict) -> None:
