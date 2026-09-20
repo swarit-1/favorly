@@ -49,7 +49,7 @@ async def get_graph(since: Optional[datetime] = Query(default=None), conn: async
     }
 
     people = await conn.fetch(
-        "SELECT id, display_name FROM people WHERE id = ANY($1::uuid[])", list(touched_ids) or [None],
+        "SELECT id, display_name FROM app_people WHERE id = ANY($1::uuid[])", list(touched_ids) or [None],
     ) if touched_ids else []
     name_of = {str(p["id"]): p["display_name"] for p in people}
 

@@ -23,7 +23,7 @@ async def create_event(payload: EventIn, conn: asyncpg.Connection = Depends(get_
         if existing:
             return {"event_id": str(existing["id"])}
 
-    person = await conn.fetchrow("SELECT id FROM people WHERE id = $1", payload.person_id)
+    person = await conn.fetchrow("SELECT id FROM app_people WHERE id = $1", payload.person_id)
     if not person:
         raise HTTPException(404, "person not found")
 
@@ -44,8 +44,8 @@ async def create_event(payload: EventIn, conn: asyncpg.Connection = Depends(get_
 @router.post("/favors", status_code=202)
 async def create_favor(payload: FavorIn, conn: asyncpg.Connection = Depends(get_conn)):
     """Sugar over /events that writes the favor edge directly."""
-    giver = await conn.fetchrow("SELECT id FROM people WHERE id = $1", payload.giver_id)
-    receiver = await conn.fetchrow("SELECT id FROM people WHERE id = $1", payload.receiver_id)
+    giver = await conn.fetchrow("SELECT id FROM app_people WHERE id = $1", payload.giver_id)
+    receiver = await conn.fetchrow("SELECT id FROM app_people WHERE id = $1", payload.receiver_id)
     if not giver or not receiver:
         raise HTTPException(404, "giver or receiver not found")
 

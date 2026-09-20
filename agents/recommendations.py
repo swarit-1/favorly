@@ -67,7 +67,7 @@ async def _mutuals(conn: asyncpg.Connection, helper_id: str, needer_id: str) -> 
     """Names of people both of you have exchanged favors with."""
     rows = await conn.fetch(
         """
-        SELECT p.display_name FROM people p WHERE p.id IN (
+        SELECT p.display_name FROM app_people p WHERE p.id IN (
           SELECT id FROM (
             SELECT dst_id AS id FROM edges WHERE src_id = $1
             UNION SELECT src_id AS id FROM edges WHERE dst_id = $1
@@ -278,7 +278,7 @@ async def recommend_for(conn: asyncpg.Connection, helper_id: str, limit: int = 1
     """Rank open needs posted by other people for this helper."""
     needs = await conn.fetch(
         "SELECT n.id, n.person_id, n.body, n.created_at, p.display_name "
-        "FROM needs n JOIN people p ON p.id = n.person_id "
+        "FROM needs n JOIN app_people p ON p.id = n.person_id "
         "WHERE n.status = 'open' AND n.person_id <> $1 "
         "ORDER BY n.created_at DESC LIMIT 200",
         helper_id,
@@ -388,7 +388,7 @@ async def suggest_favors(conn: asyncpg.Connection, helper_id: str, limit: int = 
         return {"person_id": helper_id, "decided_by": "graph", "favors": []}
 
     by_id = {c["need_id"]: c for c in candidates}
-    helper = await conn.fetchrow("SELECT display_name FROM people WHERE id = $1", helper_id)
+    helper = await conn.fetchrow("SELECT display_name FROM app_people WHERE id = $1", helper_id)
     helper_claims = await _claims(conn, helper_id)
     trip = await _upcoming_trip(conn, helper_id)
 
