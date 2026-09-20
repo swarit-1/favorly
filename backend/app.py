@@ -99,12 +99,14 @@ async def health_check():
 # ============================================================================
 
 from routes import auth, trips, requests, users, merged_list
+from routes.linq_webhook import router as linq_router
 
 app.include_router(auth.router)
 app.include_router(trips.router)
 app.include_router(requests.router)
 app.include_router(users.router)
 app.include_router(merged_list.router)
+app.include_router(linq_router)  # Linq agent: inbound texts -> matching -> reply
 
 @app.post("/trips", tags=["trips"])
 async def create_trip(trip: dict):

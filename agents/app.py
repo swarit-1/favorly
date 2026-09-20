@@ -21,7 +21,7 @@ import db
 import canonicalization
 import worker
 from config import settings
-from routes import admin, events, graph, needs, people, stream
+from routes import admin, events, graph, needs, people, stream, trips
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("trellis")
@@ -75,6 +75,7 @@ app.add_middleware(
 )
 
 app.include_router(events.router)
+app.include_router(trips.router)
 app.include_router(needs.router)
 app.include_router(people.router)
 app.include_router(graph.router)

@@ -15,6 +15,8 @@ def get_supabase_client() -> Client:
     key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not url or not key:
         raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
+    print(f"🔑 URL: {url[:50]}...")
+    print(f"🔑 KEY: {key[:20]}...")
     return create_client(url, key)
 
 
@@ -43,14 +45,21 @@ class AuthResponse(BaseModel):
 @router.post("/signup", response_model=AuthResponse)
 async def signup(req: SignupRequest):
     """Sign up a new user."""
+    print(f"\n🚀 SIGNUP CALLED: {req.email} / {req.invite_code}")
     supabase = get_supabase_client()
 
     try:
-        # Create auth user
-        auth_response = supabase.auth.sign_up({
-            "email": req.email,
-            "password": req.password,
-        })
+        # Create auth user with email confirmation skipped
+        try:
+            auth_response = supabase.auth.sign_up({
+                "email": req.email,
+                "password": req.password,
+                "options": {"skip_confirmation": True}
+            })
+        except Exception as auth_error:
+            print(f"❌ Auth error: {auth_error}")
+            raise HTTPException(status_code=400, detail=str(auth_error))
+
         if not auth_response.user:
             raise HTTPException(status_code=400, detail="Failed to create auth user")
 
@@ -58,18 +67,26 @@ async def signup(req: SignupRequest):
         access_token = auth_response.session.access_token if auth_response.session else ""
 
         # Find circle by invite code
+        print(f"🔍 Looking for circle with code: '{req.invite_code}'")
         circle_response = supabase.table("circles").select("*").eq("invite_code", req.invite_code).execute()
+        print(f"📦 Full response: {circle_response}")
+        print(f"📦 Data: {circle_response.data}")
+        print(f"📦 Count: {circle_response.count}")
         if not circle_response.data:
             raise HTTPException(status_code=404, detail="Invalid invite code")
 
         circle_id = circle_response.data[0]["id"]
 
         # Create user in users table
-        user_response = supabase.table("users").insert({
-            "id": user_id,
-            "circle_id": circle_id,
-            "name": req.name,
-        }).execute()
+        try:
+            user_response = supabase.table("users").insert({
+                "id": user_id,
+                "circle_id": circle_id,
+                "name": req.name,
+            }).execute()
+        except Exception as db_error:
+            print(f"❌ Database error: {db_error}")
+            raise HTTPException(status_code=500, detail=str(db_error))
 
         if not user_response.data:
             raise HTTPException(status_code=500, detail="Failed to create user")
