@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../providers/vision_provider.dart';
-import '../services/camera_service.dart';
 import 'photo_review_screen.dart';
 
 class CameraScreen extends ConsumerStatefulWidget {

@@ -18,6 +18,7 @@ import '../widgets/favor_hero.dart';
 import '../widgets/page.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/trip_hero.dart';
+import '../widgets/notification_bell.dart';
 import 'add_list_screen.dart';
 import 'favor_detail_screen.dart';
 import 'favor_finish_sheet.dart';
@@ -62,6 +63,11 @@ class TripsScreen extends ConsumerWidget {
     ];
 
     return FavorlyPage(
+      topBar: FTopBar(
+        title: null,
+        showBack: false,
+        trailing: const NotificationBell(),
+      ),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       children: [
         Text('${greeting(DateTime.now())}, $firstName', style: FType.title),

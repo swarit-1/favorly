@@ -200,6 +200,28 @@ class DemoStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateProfile({
+    String? photoPath,
+    String? bio,
+    MemberAddress? address,
+    List<String>? dietary,
+    List<String>? stores,
+    List<String>? availability,
+    ShopperRole? role,
+  }) {
+    final i = members.indexWhere((m) => m.id == _meId);
+    members[i] = members[i].copyWith(
+      photoPath: photoPath,
+      bio: bio,
+      address: address,
+      dietary: dietary,
+      stores: stores,
+      availability: availability,
+      role: role,
+    );
+    notifyListeners();
+  }
+
   void setNotifications(bool on) {
     notificationsOn = on;
     notifyListeners();
@@ -223,6 +245,7 @@ class DemoStore extends ChangeNotifier {
     final trip = Trip(
       id: _id('trip'),
       shopperId: _meId,
+      circleId: DEMO_CIRCLE_ID,
       store: store.trim(),
       departAt: departAt,
       caps: caps,
@@ -1089,6 +1112,7 @@ class DemoStore extends ChangeNotifier {
         Trip(
           id: 'trip_tj',
           shopperId: ANA_ID,
+          circleId: DEMO_CIRCLE_ID,
           store: "Trader Joe's",
           departAt: leaves,
           caps: const TripCaps(maxRequesters: 5, maxDollarsPerPerson: 40, maxItemsPerPerson: 8),
@@ -1108,6 +1132,7 @@ class DemoStore extends ChangeNotifier {
         Trip(
           id: 'trip_cvs',
           shopperId: MAYA_ID,
+          circleId: DEMO_CIRCLE_ID,
           store: 'CVS',
           departAt: at(1, 10, 30),
           caps: const TripCaps(maxRequesters: 4, maxDollarsPerPerson: 25, maxItemsPerPerson: 5),
@@ -1115,6 +1140,7 @@ class DemoStore extends ChangeNotifier {
         Trip(
           id: 'trip_costco',
           shopperId: CHLOE_ID,
+          circleId: DEMO_CIRCLE_ID,
           store: 'Costco',
           departAt: at(-sinceSaturday, 9, 0),
           status: TripStatus.done,

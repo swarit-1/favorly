@@ -27,18 +27,61 @@ enum StoreSection {
 
 enum MemberTint { blue, green, amber, plum }
 
+enum ShopperRole { shopper, requester, both }
+
+class MemberAddress {
+  const MemberAddress({
+    this.unit,
+    this.floor,
+    this.buzzer,
+    this.notes,
+  });
+
+  final String? unit;
+  final String? floor;
+  final String? buzzer;
+  final String? notes;
+
+  MemberAddress copyWith({
+    String? unit,
+    String? floor,
+    String? buzzer,
+    String? notes,
+  }) =>
+      MemberAddress(
+        unit: unit ?? this.unit,
+        floor: floor ?? this.floor,
+        buzzer: buzzer ?? this.buzzer,
+        notes: notes ?? this.notes,
+      );
+}
+
 class Member {
   const Member({
     required this.id,
     required this.name,
     required this.venmoHandle,
     required this.tint,
+    this.photoPath,
+    this.bio,
+    this.address,
+    this.dietary = const [],
+    this.stores = const [],
+    this.availability = const [],
+    this.role = ShopperRole.both,
   });
 
   final String id;
   final String name;
   final String venmoHandle;
   final MemberTint tint;
+  final String? photoPath;
+  final String? bio;
+  final MemberAddress? address;
+  final List<String> dietary;
+  final List<String> stores;
+  final List<String> availability;
+  final ShopperRole role;
 
   String get firstName => name.trim().split(RegExp(r'\s+')).first;
 
@@ -47,11 +90,29 @@ class Member {
     return parts.take(2).map((p) => p[0].toUpperCase()).join();
   }
 
-  Member copyWith({String? name, String? venmoHandle}) => Member(
+  Member copyWith({
+    String? name,
+    String? venmoHandle,
+    String? photoPath,
+    String? bio,
+    MemberAddress? address,
+    List<String>? dietary,
+    List<String>? stores,
+    List<String>? availability,
+    ShopperRole? role,
+  }) =>
+      Member(
         id: id,
         name: name ?? this.name,
         venmoHandle: venmoHandle ?? this.venmoHandle,
         tint: tint,
+        photoPath: photoPath ?? this.photoPath,
+        bio: bio ?? this.bio,
+        address: address ?? this.address,
+        dietary: dietary ?? this.dietary,
+        stores: stores ?? this.stores,
+        availability: availability ?? this.availability,
+        role: role ?? this.role,
       );
 }
 
@@ -209,6 +270,7 @@ class Trip {
   const Trip({
     required this.id,
     required this.shopperId,
+    required this.circleId,
     required this.store,
     required this.departAt,
     this.caps = const TripCaps(),
@@ -218,6 +280,7 @@ class Trip {
 
   final String id;
   final String shopperId;
+  final String circleId;
   final String store;
   final DateTime departAt;
   final TripCaps caps;
@@ -234,6 +297,7 @@ class Trip {
   Trip copyWith({TripStatus? status, List<TripRequest>? requests}) => Trip(
         id: id,
         shopperId: shopperId,
+        circleId: circleId,
         store: store,
         departAt: departAt,
         caps: caps,

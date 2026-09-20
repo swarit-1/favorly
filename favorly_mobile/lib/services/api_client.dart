@@ -277,6 +277,42 @@ class ApiClient {
     }
   }
 
+  static Future<Map<String, dynamic>> updateProfile({
+    required String userId,
+    required String accessToken,
+    String? bio,
+    String? photoUrl,
+    String? role,
+    Map<String, String?>? address,
+    List<String>? dietary,
+    List<String>? preferredStores,
+    List<String>? availability,
+  }) async {
+    final body = <String, dynamic>{};
+    if (bio != null) body['bio'] = bio;
+    if (photoUrl != null) body['photo_url'] = photoUrl;
+    if (role != null) body['role'] = role;
+    if (address != null) body['address'] = address;
+    if (dietary != null) body['dietary'] = dietary;
+    if (preferredStores != null) body['preferred_stores'] = preferredStores;
+    if (availability != null) body['availability'] = availability;
+
+    final response = await http.patch(
+      Uri.parse('$apiBaseUrl/users/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode(body),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Update profile failed: ${response.body}');
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> getCircleMembers(
     String circleId,
   ) async {
@@ -387,6 +423,109 @@ class ApiClient {
       return jsonDecode(response.body);
     } else {
       throw Exception('Refresh compatibility cache failed: ${response.body}');
+    }
+  }
+
+  // --- MESSAGES (Live Chat) ---
+
+  static Future<Map<String, dynamic>> postMessage({
+    required String tripId,
+    required String body,
+    required String accessToken,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/messages/$tripId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode({'body': body}),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Post message failed: ${response.body}');
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getMessages({
+    required String tripId,
+    int limit = 50,
+    String? before,
+  }) async {
+    final params = <String, String>{'limit': limit.toString()};
+    if (before != null) params['before'] = before;
+
+    final uri = Uri.parse('$apiBaseUrl/messages/$tripId')
+        .replace(queryParameters: params);
+
+    final response = await http.get(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+    } else {
+      throw Exception('Get messages failed: ${response.body}');
+    }
+  }
+
+  // --- NOTIFICATIONS ---
+
+  static Future<List<Map<String, dynamic>>> getNotifications({
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/notifications'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+    } else {
+      throw Exception('Get notifications failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> markNotificationRead({
+    required String notificationId,
+    required String accessToken,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$apiBaseUrl/notifications/$notificationId/read'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Mark notification read failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> markAllNotificationsRead({
+    required String accessToken,
+  }) async {
+    final response = await http.patch(
+      Uri.parse('$apiBaseUrl/notifications/read-all'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Mark all notifications read failed: ${response.body}');
     }
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class VisionApiClient {
@@ -184,21 +185,15 @@ class VisionApiClient {
   /// Safely parse JSON
   Map<String, dynamic> _parseJson(String body) {
     try {
-      return Map<String, dynamic>.from(
-        (Uri.parse('data:application/json,$body').data) as Map<String, dynamic>,
-      );
+      return Map<String, dynamic>.from(jsonDecode(body) as Map<String, dynamic>);
     } catch (e) {
-      try {
-        return {'raw_response': body};
-      } catch (_) {
-        return {'error': 'Failed to parse response'};
-      }
+      return {'raw_response': body};
     }
   }
 
   /// JSON encode helper
   String _jsonEncode(dynamic data) {
-    return data.toString(); // Use simple toString for form field
+    return jsonEncode(data);
   }
 }
 

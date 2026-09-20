@@ -2,6 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/auth_provider.dart';
+import '../providers/notification_provider.dart';
 import '../state/demo_store.dart';
 import '../theme/tokens.dart';
 import 'circle_screen.dart';
@@ -40,6 +42,14 @@ class _RootShellState extends ConsumerState<RootShell> {
   @override
   Widget build(BuildContext context) {
     final index = ref.watch(tabProvider);
+
+    // Load notifications when user is authenticated
+    ref.listen<AuthState>(authProvider, (_, auth) {
+      if (auth.accessToken != null) {
+        ref.read(notificationProvider.notifier).load(auth.accessToken!);
+      }
+    });
+
     // Realtime stand-in: when a substitution prompt lands for the person
     // holding this phone, the chooser slides up wherever they are.
     ref.listen<DemoStore>(storeProvider, (_, store) => _maybeShowPrompt(store));

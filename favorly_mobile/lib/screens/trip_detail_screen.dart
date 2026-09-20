@@ -17,6 +17,8 @@ import 'handoff_screen.dart';
 import 'settlement_screen.dart';
 import 'shopping_screen.dart';
 import 'substitution_choice_sheet.dart';
+import 'trip_chat_screen.dart';
+import 'map_screen.dart';
 
 /// One trip, seen from whichever side the person is on.
 class TripDetailScreen extends ConsumerWidget {
@@ -49,7 +51,33 @@ class TripDetailScreen extends ConsumerWidget {
     ];
 
     return FavorlyPage(
-      topBar: const FTopBar(title: 'Trip'),
+      topBar: FTopBar(
+        title: 'Trip',
+        trailing: trip.status != TripStatus.done
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () => push(
+                      context,
+                      TripChatScreen(tripId: trip.id),
+                    ),
+                    child: const Icon(CupertinoIcons.bubble_left_fill),
+                  ),
+                  if (trip.status == TripStatus.shopping && mine)
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () => push(
+                        context,
+                        MapScreen(tripId: trip.id, circleId: trip.circleId),
+                      ),
+                      child: const Icon(CupertinoIcons.map_pin),
+                    ),
+                ],
+              )
+            : null,
+      ),
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
       children: children,
       bottom: mine
