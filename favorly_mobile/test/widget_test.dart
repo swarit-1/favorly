@@ -98,7 +98,10 @@ void main() {
   testWidgets('a neighbor types a list, reviews it, and attaches it', (tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.text('Add your list'));
+    // v2: the grocery list flow lives inside the composer now.
+    await tester.tap(find.text('Ask for anything'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Have a grocery list? Snap it'));
     await tester.pumpAndSettle();
     await tester.enterText(
         find.byType(TextField).first, '2 lemons\noat milk under \$5');

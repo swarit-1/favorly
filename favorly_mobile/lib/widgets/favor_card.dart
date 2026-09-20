@@ -65,6 +65,15 @@ class FavorCard extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // They asked for you by name; that changes the row from a
+                  // suggestion into a knock on your door.
+                  if (favor.invited) ...[
+                    Eyebrow(
+                      'Asked for you',
+                      color: onHold ? FColors.inkTertiary : FColors.blue,
+                    ),
+                    const SizedBox(height: 2),
+                  ],
                   Text(
                     name,
                     style: FType.bodyStrong.copyWith(color: ink),

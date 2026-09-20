@@ -24,8 +24,9 @@ class _RootShellState extends ConsumerState<RootShell> {
 
   // Order matters twice over: it is the tab bar, and FTab names these
   // positions for the screens that jump between them. Change one, change both.
+  // "Home" is a label change only; the position is still FTab.trips.
   static const _tabs = [
-    _TabSpec('Trips', CupertinoIcons.house, CupertinoIcons.house_fill),
+    _TabSpec('Home', CupertinoIcons.house, CupertinoIcons.house_fill),
     _TabSpec('Circle', CupertinoIcons.person_2, CupertinoIcons.person_2_fill),
     _TabSpec(
       'Map',
