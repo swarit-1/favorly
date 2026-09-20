@@ -1,259 +1,184 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../theme.dart';
-import '../widgets/common.dart';
+import '../models/models.dart';
+import '../state/demo_store.dart';
+import '../theme/tokens.dart';
+import '../util/format.dart';
+import '../util/nav.dart';
+import '../widgets/buttons.dart';
+import '../widgets/chips.dart';
+import '../widgets/page.dart';
+import '../widgets/people.dart';
+import '../widgets/surfaces.dart';
+import '../widgets/trip_hero.dart';
+import 'add_list_screen.dart';
 import 'post_trip_screen.dart';
+import 'settlement_screen.dart';
+import 'shopping_screen.dart';
+import 'trip_detail_screen.dart';
 
-class TripsScreen extends StatelessWidget {
+class TripsScreen extends ConsumerWidget {
   const TripsScreen({super.key});
 
-  static String _greeting(DateTime now) {
-    if (now.hour < 12) return 'Good morning';
-    if (now.hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  }
-
   @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final store = ref.watch(storeProvider);
+    final me = store.me;
+    final active = store.activeTrip;
+    final upcoming = store.upcomingTrips;
+    final recent = store.recentTrips;
 
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Favorly',
-                style: text.headlineMedium?.copyWith(
-                  color: AppColors.green,
-                  fontSize: 30,
-                  letterSpacing: -1,
-                ),
-              ),
-              IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.notifications_none_rounded),
-                color: AppColors.green,
-                tooltip: 'Notifications',
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          const _CirclePill(label: 'Maple St · Building B'),
-          const SizedBox(height: 20),
-          Text('${_greeting(DateTime.now())}, Ana', style: text.titleLarge),
-          const SizedBox(height: 4),
-          Text(
-            "Neighbors help neighbors. That's Favorly.",
-            style: text.bodyMedium,
-          ),
-          const SizedBox(height: 22),
-          SectionHeader(
-            title: 'Active trip',
-            action: TextButton(
-              onPressed: () {},
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.green,
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text(
-                'See all',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          const _ActiveTripCard(),
-          const SizedBox(height: 22),
-          const SectionHeader(title: 'Upcoming trips'),
-          const SizedBox(height: 10),
-          const _UpcomingTripTile(
-            store: 'CVS',
-            when: 'Tomorrow · 10:30 AM',
-          ),
-          const SizedBox(height: 24),
-          PillButton(
-            label: 'Post a trip',
-            background: AppColors.orange,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const PostTripScreen(),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CirclePill extends StatelessWidget {
-  const _CirclePill({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFF1EEE8),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: () {},
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          child: Row(
-            children: [
-              const Icon(Icons.groups_rounded, size: 20, color: AppColors.green),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.ink,
-                  ),
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: AppColors.muted),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActiveTripCard extends StatelessWidget {
-  const _ActiveTripCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.greenTint,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("Trader Joe's", style: text.titleLarge),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Today · leaves at 3:00 PM',
-                      style: text.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              const IconBadge(icon: Icons.shopping_basket_rounded),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const _TripMetaRow(
-            icon: Icons.person_rounded,
-            label: 'Ana is going',
-            filled: true,
-          ),
-          const SizedBox(height: 10),
-          const _TripMetaRow(
-            icon: Icons.groups_rounded,
-            label: '2 of 5 spots left',
-          ),
-          const SizedBox(height: 18),
-          PillButton(label: 'Add my list', onPressed: () {}),
-        ],
-      ),
-    );
-  }
-}
-
-class _TripMetaRow extends StatelessWidget {
-  const _TripMetaRow({
-    required this.icon,
-    required this.label,
-    this.filled = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool filled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
+    return FavorlyPage(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       children: [
-        if (filled)
-          Container(
-            width: 24,
-            height: 24,
-            decoration: const BoxDecoration(
-              color: AppColors.green,
-              shape: BoxShape.circle,
+        Row(
+          children: [
+            const _CircleTag(label: DemoStore.circleName),
+            const Spacer(),
+            Pressable(
+              label: 'Your profile',
+              onTap: () => ref.read(tabProvider.notifier).state = 2,
+              child: Avatar(me, size: 36),
             ),
-            child: Icon(icon, size: 14, color: AppColors.greenTint),
+          ],
+        ),
+        const SizedBox(height: 22),
+        Text('${greeting(DateTime.now())}, ${me.firstName}', style: FType.title),
+        const SizedBox(height: 20),
+        if (active == null)
+          const EmptyState(
+            icon: CupertinoIcons.cart,
+            title: 'No trips yet',
+            body: 'Heading to a store? Post the trip and neighbors can add a few items.',
           )
         else
-          Icon(icon, size: 22, color: AppColors.green),
-        const SizedBox(width: 12),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: AppColors.ink,
+          _ActiveTrip(trip: active),
+        if (upcoming.isNotEmpty) ...[
+          const SectionHeader('Coming up'),
+          Panel(
+            dividerIndent: 68,
+            children: [for (final t in upcoming) _TripRow(trip: t)],
           ),
-        ),
+        ],
+        if (recent.isNotEmpty) ...[
+          const SectionHeader('Recent'),
+          Panel(
+            dividerIndent: 68,
+            children: [for (final t in recent) _TripRow(trip: t)],
+          ),
+        ],
       ],
+      bottom: FButton(
+        label: 'Post a trip',
+        icon: CupertinoIcons.plus,
+        onPressed: () => push(context, const PostTripScreen()),
+      ),
     );
   }
 }
 
-class _UpcomingTripTile extends StatelessWidget {
-  const _UpcomingTripTile({required this.store, required this.when});
+class _CircleTag extends StatelessWidget {
+  const _CircleTag({required this.label});
 
-  final String store;
-  final String when;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-
-    return OutlinedCard(
-      onTap: () {},
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 6, 12, 6),
+      decoration: BoxDecoration(
+        color: FColors.surface,
+        borderRadius: BorderRadius.circular(FRadius.pill),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const IconBadge(icon: Icons.storefront_rounded, size: 40),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(store, style: text.titleMedium),
-                const SizedBox(height: 2),
-                Text(when, style: text.bodyMedium?.copyWith(fontSize: 14)),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right, color: AppColors.muted),
+          const Icon(CupertinoIcons.person_2, size: 16, color: FColors.inkSecondary),
+          const SizedBox(width: 6),
+          Text(label, style: FType.captionStrong),
         ],
       ),
+    );
+  }
+}
+
+class _ActiveTrip extends ConsumerWidget {
+  const _ActiveTrip({required this.trip});
+
+  final Trip trip;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final store = ref.watch(storeProvider);
+    final shopper = store.memberById(trip.shopperId);
+    final mine = store.isShopper(trip);
+    final myRequest = store.myRequest(trip);
+    final settlement = store.settlementFor(trip.id, store.meId);
+
+    void openDetail() =>
+        push(context, TripDetailScreen(tripId: trip.id), name: 'trip/${trip.id}');
+
+    final (String label, VoidCallback go) = switch (trip.status) {
+      TripStatus.open when mine => (
+          trip.requests.isEmpty
+              ? 'Open trip'
+              : 'Review ${plural(trip.requests.length, 'list')}',
+          openDetail,
+        ),
+      TripStatus.open => myRequest == null
+          ? ('Add my list', () => push(context, AddListScreen(tripId: trip.id)))
+          : ('See my list', openDetail),
+      TripStatus.shopping when mine => (
+          'Continue shopping',
+          () => push(context, ShoppingScreen(tripId: trip.id)),
+        ),
+      TripStatus.shopping => ('Track trip', openDetail),
+      TripStatus.settling when mine => ('Finish up', openDetail),
+      TripStatus.settling when settlement != null && !settlement.paid => (
+          'Pay ${money(settlement.total)}',
+          () => push(context, SettlementScreen(tripId: trip.id)),
+        ),
+      TripStatus.settling => ('See trip', openDetail),
+      TripStatus.done => ('See trip', openDetail),
+    };
+
+    final badge = switch (trip.status) {
+      TripStatus.open => '${store.spotsLeft(trip)} of ${trip.caps.maxRequesters} spots',
+      _ => plural(trip.items.length, 'item'),
+    };
+
+    return TripHero(
+      trip: trip,
+      shopper: shopper,
+      isMine: mine,
+      badge: badge,
+      onTap: openDetail,
+      action: FButton(label: label, kind: FButtonKind.onAccent, onPressed: go),
+    );
+  }
+}
+
+class _TripRow extends ConsumerWidget {
+  const _TripRow({required this.trip});
+
+  final Trip trip;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final store = ref.watch(storeProvider);
+    final shopper = store.memberById(trip.shopperId);
+    final done = trip.status == TripStatus.done;
+    final who = store.isShopper(trip) ? 'you' : shopper.firstName;
+    final subtitle = done
+        ? '${dayLabel(trip.departAt)} · ${plural(trip.requesterCount, 'neighbor')} · $who'
+        : '${whenLabel(trip.departAt)} · $who';
+    return PanelRow(
+      leading: const LeadingIcon(CupertinoIcons.cart, size: 40),
+      title: trip.store,
+      subtitle: subtitle,
+      trailing: done ? const StatusPill('Done', kind: PillKind.success) : null,
+      onTap: () => push(context, TripDetailScreen(tripId: trip.id), name: 'trip/${trip.id}'),
     );
   }
 }
