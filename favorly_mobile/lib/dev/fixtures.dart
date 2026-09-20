@@ -316,3 +316,193 @@ abstract final class FixtureWorld {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Favorly Route (S2): POST /route/plan, in the frozen contract shape.
+// ---------------------------------------------------------------------------
+
+/// The base plan for the seeded trip: three stops, the 212-instead-of-480
+/// line, three explained suggestions, and one requester already over cap so
+/// the warning can be rehearsed without a server.
+const Map<String, dynamic> fixtureRoutePlanBase = {
+  'trip_id': 'trip-1',
+  'store': "Trader Joe's",
+  'layout': {
+    'width_m': 30,
+    'height_m': 20,
+    'nodes': [
+      {'key': 'entrance', 'x': 1.0, 'y': 18.0},
+      {'key': 'produce', 'x': 4.0, 'y': 4.0},
+      {'key': 'bakery', 'x': 10.0, 'y': 3.0},
+      {'key': 'dairy', 'x': 26.0, 'y': 5.0},
+      {'key': 'pantry', 'x': 16.0, 'y': 10.0},
+      {'key': 'frozen', 'x': 22.0, 'y': 14.0},
+      {'key': 'beverages', 'x': 26.0, 'y': 11.0},
+      {'key': 'checkout', 'x': 8.0, 'y': 18.0},
+    ],
+  },
+  'stops': [
+    {
+      'order': 1,
+      'section': 'produce',
+      'x': 4.0,
+      'y': 4.0,
+      'items': [
+        {'name': 'bananas', 'qty': 2, 'requester_first': 'Grace'},
+        {'name': 'spinach', 'qty': 1, 'requester_first': 'Ana'},
+      ],
+    },
+    {
+      'order': 2,
+      'section': 'dairy',
+      'x': 26.0,
+      'y': 5.0,
+      'items': [
+        {'name': 'yogurt', 'qty': 1, 'requester_first': 'Ana'},
+      ],
+    },
+    {
+      'order': 3,
+      'section': 'pantry',
+      'x': 16.0,
+      'y': 10.0,
+      'items': [
+        {'name': 'pasta', 'qty': 2, 'requester_first': 'Dev'},
+      ],
+    },
+  ],
+  'path': [
+    {'x': 1.0, 'y': 18.0},
+    {'x': 4.0, 'y': 4.0},
+    {'x': 26.0, 'y': 5.0},
+    {'x': 16.0, 'y': 10.0},
+    {'x': 8.0, 'y': 18.0},
+  ],
+  'distance_m': 212.0,
+  'baseline_distance_m': 480.0,
+  'suggestions': [
+    {
+      'id': 'sug-milk',
+      'kind': 'neighbor',
+      'title': 'Milk for Grace',
+      'reason': 'Grace needs milk. Dairy is already on your route. Adds 0 m.',
+      'item': {'name': 'milk', 'qty': 1, 'section': 'dairy'},
+      'added_distance_m': 0.0,
+      'requester_first': 'Grace',
+    },
+    {
+      'id': 'sug-eggs',
+      'kind': 'future_you',
+      'title': 'Eggs for you',
+      'reason':
+          'Your pantry scan on Thursday showed one egg left. Dairy is already on your route. Adds 0 m.',
+      'item': {'name': 'eggs', 'qty': 1, 'section': 'dairy'},
+      'added_distance_m': 0.0,
+      'requester_first': '',
+    },
+    {
+      'id': 'sug-seltzer',
+      'kind': 'forgotten',
+      'title': 'Seltzer for you',
+      'reason':
+          'On your last three lists but missing from this one. Drinks sit just past dairy. Adds 12 m.',
+      'item': {'name': 'seltzer', 'qty': 1, 'section': 'beverages'},
+      'added_distance_m': 12.0,
+      'requester_first': '',
+    },
+  ],
+  'caps': [
+    {
+      'requester_first': 'Grace',
+      'requester_id': 'p-grace',
+      'cap': 40.00,
+      'running_total': 12.50,
+      'over': false,
+    },
+    {
+      'requester_first': 'Ana',
+      'requester_id': 'p-ana',
+      'cap': 30.00,
+      'running_total': 9.25,
+      'over': false,
+    },
+    {
+      'requester_first': 'Dev',
+      'requester_id': 'p-dev',
+      'cap': 25.00,
+      'running_total': 26.75,
+      'over': true,
+    },
+  ],
+};
+
+/// What accepting a suggestion costs a requester in the fixture world, since
+/// no server priced the item. Flat and small on purpose.
+const double _kFixtureRouteItemPrice = 4.50;
+
+/// `POST /route/plan` on fixtures: the base plan with every `extra_items`
+/// entry folded in, exactly the re-plan the server would do. An extra item
+/// lands on its section's stop when the section is already on the walk,
+/// otherwise it becomes a new stop before checkout; the matching suggestion
+/// disappears, its added distance is walked, and the named requester's
+/// running total moves.
+Map<String, dynamic> fixtureRoutePlan(
+  String tripId, [
+  List<Map<String, dynamic>> extraItems = const [],
+]) {
+  final out = _deepCopy(fixtureRoutePlanBase);
+  out['trip_id'] = tripId;
+  final stops = (out['stops'] as List).cast<Map<String, dynamic>>();
+  final suggestions = (out['suggestions'] as List).cast<Map<String, dynamic>>();
+  final path = (out['path'] as List).cast<Map<String, dynamic>>();
+  final caps = (out['caps'] as List).cast<Map<String, dynamic>>();
+  final nodes = ((out['layout'] as Map)['nodes'] as List).cast<Map>();
+
+  for (final extra in extraItems) {
+    final name = '${extra['name'] ?? ''}';
+    final section = '${extra['section'] ?? 'other'}';
+
+    Map<String, dynamic>? matched;
+    final i = suggestions.indexWhere((s) => (s['item'] as Map)['name'] == name);
+    if (i >= 0) matched = suggestions.removeAt(i);
+
+    final item = {
+      'name': name,
+      'qty': extra['qty'] ?? 1,
+      'requester_first': '${matched?['requester_first'] ?? ''}'.isEmpty
+          ? 'You'
+          : matched!['requester_first'],
+    };
+
+    final stop = stops.where((s) => s['section'] == section).toList();
+    if (stop.isNotEmpty) {
+      (stop.first['items'] as List).add(item);
+    } else {
+      final node = nodes.where((n) => n['key'] == section).toList();
+      final x = node.isEmpty ? 15.0 : (node.first['x'] as num).toDouble();
+      final y = node.isEmpty ? 10.0 : (node.first['y'] as num).toDouble();
+      stops.add({
+        'order': stops.length + 1,
+        'section': section,
+        'x': x,
+        'y': y,
+        'items': [item],
+      });
+      path.insert(path.length - 1, {'x': x, 'y': y});
+    }
+
+    out['distance_m'] = (out['distance_m'] as num).toDouble() +
+        ((matched?['added_distance_m'] as num?)?.toDouble() ?? 0.0);
+
+    final who = '${matched?['requester_first'] ?? ''}';
+    for (final cap in caps) {
+      if (who.isNotEmpty && cap['requester_first'] == who) {
+        final total =
+            (cap['running_total'] as num).toDouble() + _kFixtureRouteItemPrice;
+        cap['running_total'] = total;
+        cap['over'] = total > (cap['cap'] as num).toDouble();
+      }
+    }
+  }
+  return out;
+}
