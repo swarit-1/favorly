@@ -9,7 +9,6 @@ service only tracks favors and grocery-relevant facts, it doesn't propose
 that anyone meet anyone.
 """
 
-import uuid
 from datetime import datetime, timedelta, timezone
 
 import asyncpg
@@ -69,7 +68,10 @@ SEED_NEEDS = [
     ("Jordan Reyes", "out of coffee and don't know the area yet, any chance someone can grab some?", 2),
 ]
 
-_SEED_TABLES = ("needs", "edges", "claims", "events", "people")
+# Graph tables only. Identities are Supabase Auth accounts + `users` profile
+# rows and are never truncated by a seed -- mint them with
+# backend/seed/seed_auth_users.py.
+_SEED_TABLES = ("needs", "edges", "claims", "events")
 
 
 # ---------------------------------------------------------------------------
@@ -114,24 +116,50 @@ DEMO_NEEDS = [
 ]
 
 
+class MissingIdentities(RuntimeError):
+    """Seed data names someone with no Supabase Auth account + `users` row."""
+
+    def __init__(self, names: list[str]):
+        self.names = names
+        super().__init__(
+            "No auth account for: " + ", ".join(names) + ". "
+            "Run `python backend/seed/seed_auth_users.py` to mint them, then retry."
+        )
+
+
+async def _resolve_identities(conn: asyncpg.Connection, names: list[str]) -> dict[str, str]:
+    """Map display_name -> id using the `app_people` view.
+
+    This service can no longer create a person: identity is an auth account
+    plus a `users` profile row, both minted at signup (or by the auth seeder).
+    """
+    rows = await conn.fetch(
+        "SELECT id, display_name FROM app_people WHERE display_name = ANY($1::text[])",
+        names,
+    )
+    found = {r["display_name"]: str(r["id"]) for r in rows}
+    missing = [n for n in names if n not in found]
+    if missing:
+        raise MissingIdentities(missing)
+    return found
+
+
 async def build_demo_history(conn: asyncpg.Connection) -> dict:
     """Additive. Safe to re-run; safe against a shared database."""
     now = datetime.now(timezone.utc)
     await canonicalization.seed_vocabulary(conn)
 
-    ids: dict[str, str] = {
-        r["display_name"]: str(r["id"])
-        for r in await conn.fetch("SELECT id, display_name FROM people")
-    }
+    # Every name this function touches, not just the neighbours: the favor and
+    # need tables reference people (e.g. "Ana (Shopper)") who aren't in DEMO_NEIGHBORS.
+    referenced = (
+        [n for n, _ in DEMO_NEIGHBORS]
+        + [g for g, _, _ in DEMO_FAVORS] + [r for _, r, _ in DEMO_FAVORS]
+        + [n for n, _, _ in DEMO_NEEDS]
+    )
+    ids = await _resolve_identities(conn, sorted(set(referenced)))
 
-    created, claims_made = 0, 0
+    claims_made = 0
     for name, message in DEMO_NEIGHBORS:
-        if name not in ids:
-            new_id = str(uuid.uuid4())
-            await conn.execute(
-                "INSERT INTO people (id, display_name) VALUES ($1, $2)", new_id, name)
-            ids[name] = new_id
-            created += 1
         row = await conn.fetchrow(
             "INSERT INTO events (person_id, kind, body) VALUES ($1, 'message', $2) RETURNING id",
             ids[name], message,
@@ -171,7 +199,7 @@ async def build_demo_history(conn: asyncpg.Connection) -> dict:
         needs_made += 1
 
     return {
-        "people_created": created, "claims_extracted": claims_made,
+        "people_resolved": len(ids), "claims_extracted": claims_made,
         "favors_written": favors, "needs_posted": needs_made,
         "people": ids,
     }
@@ -187,14 +215,8 @@ async def seed(conn: asyncpg.Connection, scenario: str = "warm") -> dict:
     await reset(conn)
     await canonicalization.seed_vocabulary(conn)
 
-    person_ids: dict[str, str] = {}
-    for name in RESIDENTS:
-        # Demo residents mint their own id (no backend user counterpart).
-        new_id = str(uuid.uuid4())
-        row = await conn.fetchrow(
-            "INSERT INTO people (id, display_name) VALUES ($1, $2) RETURNING id", new_id, name,
-        )
-        person_ids[name] = str(row["id"])
+    # Residents are real auth accounts, not rows this service invents.
+    person_ids = await _resolve_identities(conn, RESIDENTS)
 
     if scenario == "cold":
         return {"scenario": "cold", "person_ids": person_ids}

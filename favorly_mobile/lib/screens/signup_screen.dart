@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../theme/tokens.dart';
 import '../widgets/buttons.dart';
+import '../widgets/error_panel.dart';
 import '../widgets/surfaces.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
@@ -141,11 +142,11 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   style: FType.money.copyWith(letterSpacing: 2),
                   decoration: InputDecoration(
                     hintText: 'ABC123',
-                    errorText: _error,
                   ),
                   onChanged: (_) => setState(() => _error = null),
                   onSubmitted: (_) => _signup(),
                 ),
+                ErrorPanel(_error),
                 const SizedBox(height: 28),
                 FButton(
                   label: _isLoading ? 'Creating account...' : 'Sign up',

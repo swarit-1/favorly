@@ -14,8 +14,10 @@ router = APIRouter(prefix="/admin")
 
 @router.post("/seed")
 async def admin_seed(payload: SeedIn, conn: asyncpg.Connection = Depends(get_conn)):
-    result = await seed_data.seed(conn, payload.scenario)
-    return result
+    try:
+        return await seed_data.seed(conn, payload.scenario)
+    except seed_data.MissingIdentities as e:
+        raise HTTPException(409, str(e))
 
 
 @router.post("/demo-history")
@@ -26,7 +28,10 @@ async def admin_demo_history(conn: asyncpg.Connection = Depends(get_conn)):
     Additive -- unlike /admin/seed it truncates nothing, so it is safe to run
     against a shared database where other people's rows must survive.
     """
-    return await seed_data.build_demo_history(conn)
+    try:
+        return await seed_data.build_demo_history(conn)
+    except seed_data.MissingIdentities as e:
+        raise HTTPException(409, str(e))
 
 
 @router.post("/reset")

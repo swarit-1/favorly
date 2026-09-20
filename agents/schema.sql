@@ -8,24 +8,21 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto; -- gen_random_uuid()
 
--- People. Thin on purpose: almost everything about a person is a claim, not a column.
--- id has no server-side default: when this runs alongside the errand-
--- coordination backend (backend/schema.sql) in the same Supabase project,
--- POST /people is called with id = users.id so the two tables share the same
--- identity for a given human and every person_id/giver_id/receiver_id the
--- backend already has resolves here with no lookup or mapping table needed.
--- Demo/seed residents (agents/seed_data.py) just let the caller mint one.
-CREATE TABLE IF NOT EXISTS people (
-  id            UUID PRIMARY KEY,
-  display_name  TEXT NOT NULL,
-  phone         TEXT UNIQUE,
-  joined_at     TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+-- Identity lives in Supabase Auth. `auth.users` is the only place a person is
+-- born; `public.users` (owned by the errand-coordination backend) is their
+-- profile -- name, circle, venmo -- and its id IS the auth id. This service
+-- owns no identity table of its own: every person_id/giver_id/receiver_id
+-- below references public.users(id), which in turn references auth.users(id),
+-- so a graph row can only ever belong to a real authenticated account.
+--
+-- Read identity through the `app_people` view at the bottom of this file.
+-- Consequence: this service no longer runs standalone -- it needs the
+-- backend's `users` table and Supabase's `auth` schema in the same database.
 
 -- Append-only. Never UPDATE, never DELETE.
 CREATE TABLE IF NOT EXISTS events (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  person_id   UUID NOT NULL REFERENCES people(id),
+  person_id   UUID NOT NULL REFERENCES users(id),
   kind        TEXT NOT NULL,   -- message | favor_logged | system
   body        TEXT NOT NULL,
   occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -38,7 +35,7 @@ CREATE INDEX IF NOT EXISTS events_person_time_idx ON events (person_id, occurred
 -- person's profile) -- nothing matches on these to propose an introduction.
 CREATE TABLE IF NOT EXISTS claims (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  person_id   UUID NOT NULL REFERENCES people(id),
+  person_id   UUID NOT NULL REFERENCES users(id),
   kind        TEXT NOT NULL,   -- dietary | mobility | budget | preference
   canonical   TEXT NOT NULL,
   raw_label   TEXT NOT NULL,
@@ -59,8 +56,8 @@ CREATE INDEX IF NOT EXISTS claims_person_kind_idx ON claims (person_id, kind) WH
 -- compute the effective strength.
 CREATE TABLE IF NOT EXISTS edges (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  src_id      UUID NOT NULL REFERENCES people(id),
-  dst_id      UUID NOT NULL REFERENCES people(id),
+  src_id      UUID NOT NULL REFERENCES users(id),
+  dst_id      UUID NOT NULL REFERENCES users(id),
   kind        TEXT NOT NULL,   -- favor | co_occurrence
   weight      REAL NOT NULL DEFAULT 1.0,
   event_id    UUID REFERENCES events(id),
@@ -76,10 +73,10 @@ CREATE INDEX IF NOT EXISTS edges_dst_idx ON edges (dst_id);
 -- what feeds reciprocity into future recommendations.
 CREATE TABLE IF NOT EXISTS needs (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  person_id   UUID NOT NULL REFERENCES people(id),
+  person_id   UUID NOT NULL REFERENCES users(id),
   body        TEXT NOT NULL,
   status      TEXT NOT NULL DEFAULT 'open',  -- open | claimed | fulfilled | cancelled
-  claimed_by  UUID REFERENCES people(id),
+  claimed_by  UUID REFERENCES users(id),
   event_id    UUID REFERENCES events(id),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   resolved_at TIMESTAMPTZ
@@ -94,6 +91,20 @@ CREATE TABLE IF NOT EXISTS canonical_labels (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+
+-- Identity, read-only, assembled from the auth account and its profile. Named
+-- `app_people` rather than `people` so nothing can mistake it for a table this
+-- service owns: it is a view, and the rows behind it belong to Supabase Auth
+-- and the backend. `display_name` keeps the column name the graph queries used.
+CREATE OR REPLACE VIEW app_people AS
+SELECT u.id,
+       u.name        AS display_name,
+       a.email       AS email,
+       u.circle_id   AS circle_id,
+       u.venmo_handle,
+       a.created_at  AS joined_at
+FROM public.users u
+JOIN auth.users a ON a.id = u.id;
 -- Grocery trips offered via the SMS agent (mirrors the errand-coordination
 -- backend's trips shape; standalone-DB equivalent of sharing its table).
 -- recommendations._upcoming_trip reads this for the `trip` signal.
