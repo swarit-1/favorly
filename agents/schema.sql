@@ -93,3 +93,15 @@ CREATE TABLE IF NOT EXISTS canonical_labels (
   embedding   VECTOR(1536) NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Grocery trips offered via the SMS agent (mirrors the errand-coordination
+-- backend's trips shape; standalone-DB equivalent of sharing its table).
+-- recommendations._upcoming_trip reads this for the `trip` signal.
+CREATE TABLE IF NOT EXISTS trips (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shopper_id  UUID NOT NULL REFERENCES people(id),
+  store       TEXT NOT NULL,
+  depart_at   TIMESTAMPTZ NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'open',   -- open | shopping | done
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

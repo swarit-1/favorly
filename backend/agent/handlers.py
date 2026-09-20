@@ -35,26 +35,28 @@ def handle_message(store: AgentStore, phone: str, text: str, now: Optional[datet
     profile = store.user_for_phone(phone)
     parsed = parse_message(text, now)
 
+    store.events.append(("person", profile))
     if first_contact:
-        reply, notes = _dispatch(store, phone, profile, parsed, now)
+        reply, notes = _dispatch(store, phone, profile, parsed, now, text)
         welcome = (
             f"👋 Welcome to Favorly — you're in the {store.circle.name} circle as "
             f"{profile.user.name} (text \"call me <name>\" to change that).\n\n"
         )
         return welcome + reply, notes
-    return _dispatch(store, phone, profile, parsed, now)
+    return _dispatch(store, phone, profile, parsed, now, text)
 
 
-def _dispatch(store: AgentStore, phone: str, profile: Profile, parsed: ParsedIntent, now: datetime) -> tuple[str, list[Notification]]:
+def _dispatch(store: AgentStore, phone: str, profile: Profile, parsed: ParsedIntent, now: datetime, text: str) -> tuple[str, list[Notification]]:
 
     if parsed.intent == "set_name" and parsed.name:
         store.rename(phone, parsed.name)
         return f"Got it — you're {store.profiles[phone].user.name} now. 👋", []
     if parsed.intent == "ask_favor" and parsed.items:
-        return _handle_ask(store, profile, parsed, now)
+        return _handle_ask(store, profile, parsed, now, text)
     if parsed.intent == "offer_trip" and parsed.store:
         return _handle_trip(store, profile, parsed, now)
     if parsed.intent == "get_recommendations":
+        store.events.append(("recs", profile))
         return _handle_recommendations(store, profile, now), []
     if parsed.intent == "status":
         return _handle_status(store, profile, now), []
@@ -83,7 +85,7 @@ def _phone_of(store: AgentStore, user_id: UUID) -> Optional[str]:
     return None
 
 
-def _handle_ask(store: AgentStore, profile: Profile, parsed: ParsedIntent, now: datetime) -> tuple[str, list[Notification]]:
+def _handle_ask(store: AgentStore, profile: Profile, parsed: ParsedIntent, now: datetime, text: str) -> tuple[str, list[Notification]]:
     ask = store.create_ask(profile.user.id, parsed.items)
     candidates = [
         (t, store.requester_count(t.id))
@@ -92,6 +94,7 @@ def _handle_ask(store: AgentStore, profile: Profile, parsed: ParsedIntent, now: 
     ]
     ranked = rank_trips_for_ask([it.section for it in ask.items], candidates, now)
 
+    store.events.append(("ask", ask, ranked[0][0] if ranked else None, text))
     if ranked:
         trip, score = ranked[0]
         store.attach_ask_to_trip(ask, trip)
@@ -135,10 +138,12 @@ def _handle_trip(store: AgentStore, profile: Profile, parsed: ParsedIntent, now:
 
     notifications: list[Notification] = []
     matched_lines: list[str] = []
+    attached_asks = []
     asks_by_id = {str(a.id): a for a in pending}
     for ask_id, score in recs:
         ask = asks_by_id[ask_id]
         store.attach_ask_to_trip(ask, trip)
+        attached_asks.append(ask)
         requester = store.name_of(ask.user_id)
         matched_lines.append(f"• {requester}: {_fmt_items(ask)}")
         requester_phone = _phone_of(store, ask.user_id)
@@ -149,6 +154,7 @@ def _handle_trip(store: AgentStore, profile: Profile, parsed: ParsedIntent, now:
                 f"{_fmt_time(depart_at)} and I attached your ask ({_fmt_items(ask)}).",
             ))
 
+    store.events.append(("trip", trip, attached_asks))
     reply = f"Logged your {trip.store} run at {_fmt_time(depart_at)}."
     if matched_lines:
         reply += " I matched these favors to it:\n" + "\n".join(matched_lines)
