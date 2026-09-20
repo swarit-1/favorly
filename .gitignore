@@ -70,3 +70,4 @@ ios/.symlinks/
 .agents/
 .claude/
 skills-lock.json
+.vercel

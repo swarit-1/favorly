@@ -11,7 +11,7 @@ import asyncpg
 
 
 async def load_graph(conn: asyncpg.Connection) -> nx.Graph:
-    people_rows = await conn.fetch("SELECT id FROM people")
+    people_rows = await conn.fetch("SELECT id FROM app_people")
     edge_rows = await conn.fetch("SELECT DISTINCT src_id, dst_id FROM edges WHERE src_id <> dst_id")
 
     g = nx.Graph()

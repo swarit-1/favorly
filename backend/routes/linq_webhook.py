@@ -11,6 +11,12 @@ Payload shape (message.received, docs.linqapp.com):
     "parts": [{"type": "text", "value": "..."}]
   }
 }
+
+Every message is also mirrored into the Trellis graph service (best-effort,
+fire-and-forget): people upsert on contact, asks become needs, offered runs
+become trips, and trip-matched asks are claimed by the shopper. Trellis's
+person-aware ranking (reciprocity, mutuals, fit, affinity) is blended into
+"what should I pick up?" replies as the "why you" lines.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from agent.handlers import handle_message
 from agent.linq_client import notify, send_reply
 from agent.store import store
+from services import trellis_client as trellis
 
 router = APIRouter(tags=["linq-agent"])
 
@@ -49,6 +56,40 @@ async def linq_webhook(request: Request, background: BackgroundTasks):
 
 async def _process(sender: str, chat_id: str | None, text: str) -> None:
     reply, notifications = handle_message(store, sender, text)
+    reply = await _sync_trellis(reply)
     await send_reply(reply, chat_id=chat_id, to=sender)
     for phone, message in notifications:
         await notify(phone, message)
+
+
+async def _sync_trellis(reply: str) -> str:
+    """Forward the drained handler events to Trellis; append its person-aware
+    reasons when the user asked for recommendations. Any Trellis failure is
+    swallowed by the client, so the SMS flow never depends on it."""
+    for event in store.drain_events():
+        kind = event[0]
+        if kind == "person":
+            profile = event[1]
+            await trellis.register_person(
+                profile.user.id, profile.user.name, profile.phone or None
+            )
+        elif kind == "ask":
+            _, ask, matched_trip, raw_text = event
+            ask.trellis_need_id = await trellis.post_need(ask.user_id, raw_text)
+            if matched_trip and ask.trellis_need_id:
+                await trellis.claim_need(ask.trellis_need_id, matched_trip.shopper_id)
+        elif kind == "trip":
+            _, trip, attached_asks = event
+            await trellis.post_trip(trip.shopper_id, trip.store, trip.depart_at)
+            for ask in attached_asks:
+                if ask.trellis_need_id:
+                    await trellis.claim_need(ask.trellis_need_id, trip.shopper_id)
+        elif kind == "recs":
+            profile = event[1]
+            favors = await trellis.get_recommendations(profile.user.id)
+            if favors:
+                lines = ["", "🧠 Why you (from your favor graph):"]
+                lines += [f"• {f['reason']}" for f in favors[:3] if f.get("reason")]
+                if len(lines) > 2:
+                    reply += "\n".join(lines)
+    return reply

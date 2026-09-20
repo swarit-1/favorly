@@ -1,0 +1,19 @@
+# Secrets never belong in the deployment bundle — app.py calls load_dotenv(),
+# so an uploaded .env silently overrides the Vercel environment (including
+# ENVIRONMENT, which gates the /auth/dev/* bypass).
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+
+# Only the backend is deployed. Keep the upload small.
+**/.venv/
+**/__pycache__/
+**/*.pyc
+favorly_mobile/
+agents/
+docs/
+*.md
+**/.DS_Store
+**/storage/

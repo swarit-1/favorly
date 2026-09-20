@@ -47,6 +47,7 @@ class FavorAsk:
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=datetime.utcnow)
     matched_trip_id: Optional[UUID] = None
+    trellis_need_id: Optional[str] = None  # mirror in the Trellis needs pool
 
 
 @dataclass
@@ -65,6 +66,13 @@ class AgentStore:
         self.asks: dict[UUID, FavorAsk] = {}
         # last agent prompt per phone, for yes/no follow-ups: (kind, payload)
         self.pending_action: dict[str, tuple[str, dict]] = {}
+        # integration events for the webhook to forward (e.g. to Trellis);
+        # handlers append, the webhook drains after each message
+        self.events: list[tuple] = []
+
+    def drain_events(self) -> list[tuple]:
+        drained, self.events = self.events, []
+        return drained
 
         # Seed members get phones from LINQ_USER_PHONES="+1555...=Alice,+1555...=Bob"
         env_map = _parse_phone_env(os.getenv("LINQ_USER_PHONES", ""))

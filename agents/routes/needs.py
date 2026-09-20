@@ -16,7 +16,7 @@ router = APIRouter()
 @router.post("/needs", status_code=201)
 async def create_need(payload: NeedIn, conn: asyncpg.Connection = Depends(get_conn)):
     """Post something you need help with."""
-    person = await conn.fetchrow("SELECT id FROM people WHERE id = $1", payload.person_id)
+    person = await conn.fetchrow("SELECT id FROM app_people WHERE id = $1", payload.person_id)
     if not person:
         raise HTTPException(404, "person not found")
 
@@ -46,7 +46,7 @@ async def list_needs(
 ):
     rows = await conn.fetch(
         "SELECT n.id, n.person_id, n.body, n.status, n.claimed_by, n.created_at, p.display_name "
-        "FROM needs n JOIN people p ON p.id = n.person_id "
+        "FROM needs n JOIN app_people p ON p.id = n.person_id "
         "WHERE n.status = $1 ORDER BY n.created_at DESC",
         status,
     )
@@ -72,7 +72,7 @@ async def get_recommendations(
     """Favors this person should consider doing. The graph retrieves and scores
     candidates; the model decides which to surface and how to frame them.
     `decided_by` says which path produced the result."""
-    person = await conn.fetchrow("SELECT id FROM people WHERE id = $1", person_id)
+    person = await conn.fetchrow("SELECT id FROM app_people WHERE id = $1", person_id)
     if not person:
         raise HTTPException(404, "person not found")
     return await recommendations.suggest_favors(conn, person_id, limit)

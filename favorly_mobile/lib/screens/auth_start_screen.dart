@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
 import '../widgets/buttons.dart';
+import 'dev_login_screen.dart';
 import 'login_screen.dart';
 import 'signup_screen.dart';
 
@@ -11,6 +13,13 @@ class AuthStartScreen extends StatelessWidget {
   void _goToLogin(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+    );
+  }
+
+  // DEV BYPASS: remove along with dev_login_screen.dart once auth is real.
+  void _goToDevLogin(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const DevLoginScreen()),
     );
   }
 
@@ -51,6 +60,14 @@ class AuthStartScreen extends StatelessWidget {
                   kind: FButtonKind.secondary,
                   onPressed: () => _goToSignup(context),
                 ),
+                if (kDebugMode) ...[
+                  const SizedBox(height: 12),
+                  FButton(
+                    label: 'Dev login (pick a name)',
+                    kind: FButtonKind.tertiary,
+                    onPressed: () => _goToDevLogin(context),
+                  ),
+                ],
                 const SizedBox(height: 32),
                 Text(
                   'Favorly lets neighbors share trips to the store. Each member gets a say in what to buy.',

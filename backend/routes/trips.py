@@ -10,6 +10,7 @@ import os
 from supabase import create_client, Client
 
 from shared.contracts.models import Trip, TripCaps, TripStatus, Item, Request as RequestModel, User
+from shared.timestamps import parse_timestamp
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
@@ -72,10 +73,10 @@ async def create_trip(req: CreateTripRequest, authorization: str = Header(None))
             shopper_id=trip_data["shopper_id"],
             circle_id=trip_data["circle_id"],
             store=trip_data["store"],
-            depart_at=datetime.fromisoformat(trip_data["depart_at"]),
+            depart_at=parse_timestamp(trip_data["depart_at"]),
             caps=TripCaps(**trip_data["caps"]),
             status=TripStatus(trip_data["status"]),
-            created_at=datetime.fromisoformat(trip_data["created_at"]),
+            created_at=parse_timestamp(trip_data["created_at"]),
         )
     except HTTPException:
         raise
@@ -99,10 +100,10 @@ async def get_trip(trip_id: UUID):
             shopper_id=trip_data["shopper_id"],
             circle_id=trip_data["circle_id"],
             store=trip_data["store"],
-            depart_at=datetime.fromisoformat(trip_data["depart_at"]),
+            depart_at=parse_timestamp(trip_data["depart_at"]),
             caps=TripCaps(**trip_data["caps"]),
             status=TripStatus(trip_data["status"]),
-            created_at=datetime.fromisoformat(trip_data["created_at"]),
+            created_at=parse_timestamp(trip_data["created_at"]),
         )
     except HTTPException:
         raise
@@ -125,10 +126,10 @@ async def list_trips_by_circle(circle_id: UUID):
                 shopper_id=trip_data["shopper_id"],
                 circle_id=trip_data["circle_id"],
                 store=trip_data["store"],
-                depart_at=datetime.fromisoformat(trip_data["depart_at"]),
+                depart_at=parse_timestamp(trip_data["depart_at"]),
                 caps=TripCaps(**trip_data["caps"]),
                 status=TripStatus(trip_data["status"]),
-                created_at=datetime.fromisoformat(trip_data["created_at"]),
+                created_at=parse_timestamp(trip_data["created_at"]),
             ))
         return trips
     except Exception as e:
@@ -155,10 +156,10 @@ async def update_trip_status(trip_id: UUID, req: UpdateTripStatusRequest):
             shopper_id=trip_data["shopper_id"],
             circle_id=trip_data["circle_id"],
             store=trip_data["store"],
-            depart_at=datetime.fromisoformat(trip_data["depart_at"]),
+            depart_at=parse_timestamp(trip_data["depart_at"]),
             caps=TripCaps(**trip_data["caps"]),
             status=TripStatus(trip_data["status"]),
-            created_at=datetime.fromisoformat(trip_data["created_at"]),
+            created_at=parse_timestamp(trip_data["created_at"]),
         )
     except HTTPException:
         raise
