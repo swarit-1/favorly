@@ -3,16 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
 import '../providers/auth_provider.dart';
+import '../providers/favors_provider.dart';
 import '../state/demo_store.dart';
 import '../theme/tokens.dart';
 import '../util/format.dart';
 import '../util/nav.dart';
 import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
+import '../widgets/error_panel.dart';
+import '../widgets/favor_card.dart';
 import '../widgets/page.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/trip_hero.dart';
 import 'add_list_screen.dart';
+import 'favor_detail_screen.dart';
 import 'post_trip_screen.dart';
 import 'settlement_screen.dart';
 import 'shopping_screen.dart';
@@ -30,7 +34,6 @@ class TripsScreen extends ConsumerWidget {
     final userName = authState.name ?? store.me.name;
     final firstName = userName.split(' ').first;
     final active = store.activeTrip;
-    final upcoming = store.upcomingTrips;
     final recent = store.recentTrips;
 
     return FavorlyPage(
@@ -58,13 +61,7 @@ class TripsScreen extends ConsumerWidget {
           )
         else
           _ActiveTrip(trip: active),
-        if (upcoming.isNotEmpty) ...[
-          const SectionHeader('Coming up'),
-          Panel(
-            dividerIndent: 68,
-            children: [for (final t in upcoming) _TripRow(trip: t)],
-          ),
-        ],
+        const _RecommendedFavors(),
         if (recent.isNotEmpty) ...[
           const SectionHeader('Recent'),
           Panel(
@@ -78,6 +75,83 @@ class TripsScreen extends ConsumerWidget {
         icon: CupertinoIcons.plus,
         onPressed: () => push(context, const PostTripScreen()),
       ),
+    );
+  }
+}
+
+/// Favors the agent service thinks this person should consider doing.
+///
+/// Cached, so opening the app shows the last list immediately and refreshes
+/// behind it — a recommendation call goes through an LLM and is too slow to
+/// block the home screen on.
+class _RecommendedFavors extends ConsumerStatefulWidget {
+  const _RecommendedFavors();
+
+  @override
+  ConsumerState<_RecommendedFavors> createState() => _RecommendedFavorsState();
+}
+
+class _RecommendedFavorsState extends ConsumerState<_RecommendedFavors> {
+  @override
+  void initState() {
+    super.initState();
+    // After the first frame: reading a provider during init is not allowed,
+    // and the auth state is already settled by the time the home screen builds.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final userId = ref.read(authProvider).userId;
+      if (userId != null) ref.read(favorsProvider.notifier).load(userId);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = ref.watch(authProvider).userId;
+    final state = ref.watch(favorsProvider);
+
+    if (userId == null) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // SectionHeader already lays out a title plus an action; wrapping it
+        // in another Row leaves its Expanded with unbounded width.
+        SectionHeader(
+          'Favors for you',
+          action: state.isRefreshing ? 'Refreshing...' : 'Refresh',
+          onAction: state.isRefreshing
+              ? null
+              : () =>
+                  ref.read(favorsProvider.notifier).load(userId, force: true),
+        ),
+        if (state.isLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: FSpace.xl),
+            child: Center(child: CupertinoActivityIndicator()),
+          )
+        else if (state.favors.isEmpty)
+          const EmptyState(
+            icon: CupertinoIcons.hand_thumbsup,
+            title: 'Nothing to pick up yet',
+            body: 'When a neighbor posts something they need, the ones worth '
+                'your while show up here.',
+          )
+        else
+          Panel(
+            dividerIndent: 68,
+            children: [
+              for (final favor in state.favors)
+                FavorCard(
+                  favor: favor,
+                  started: state.startedNeedIds.contains(favor.needId),
+                  onTap: () =>
+                      push(context, FavorDetailScreen(favor: favor)),
+                ),
+            ],
+          ),
+        // A failed refresh keeps the cached list on screen; say so rather than
+        // silently showing stale data.
+        if (state.error != null) ErrorPanel(state.error),
+      ],
     );
   }
 }

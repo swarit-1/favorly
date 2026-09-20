@@ -12,7 +12,11 @@ _pool: Optional[asyncpg.Pool] = None
 async def init_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(settings.DATABASE_URL, min_size=1, max_size=10)
+        # One connection per serverless instance: they multiply, and Supabase's
+        # pooler has a finite budget.
+        max_size = 2 if settings.SERVERLESS else 10
+        _pool = await asyncpg.create_pool(
+            settings.DATABASE_URL, min_size=1, max_size=max_size)
     return _pool
 
 

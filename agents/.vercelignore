@@ -1,0 +1,12 @@
+# Secrets must never ride along: config.py calls load_dotenv(), so an uploaded
+# .env would silently override the platform environment.
+.env
+.env.*
+!.env.example
+
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.md
+.DS_Store

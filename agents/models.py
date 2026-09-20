@@ -28,6 +28,14 @@ class NeedClaimIn(BaseModel):
     person_id: str
 
 
+class FavorReviewIn(BaseModel):
+    """How a finished favor went. Rating is required, the comment is not."""
+
+    reviewer_id: str
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = None
+
+
 class Requester(BaseModel):
     id: str
     display_name: str

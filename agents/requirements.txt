@@ -18,6 +18,7 @@ pydantic-settings>=2.2.0
 # Env
 python-dotenv>=1.0.0
 
-# Weight learning (logistic regression)
-scikit-learn>=1.4.0
-numpy>=1.26.0
+# NOTE: scikit-learn/numpy were listed for weight learning that was never
+# written -- nothing imports them, and they pulled in ~163MB (scipy included),
+# which does not fit in a serverless function. Add them back with the code
+# that needs them.

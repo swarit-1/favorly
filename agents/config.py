@@ -20,6 +20,13 @@ def _float(name: str, default: float) -> float:
 
 class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/trellis")
+
+    # Serverless changes three things: the schema is not re-applied on every
+    # cold start, extraction runs inline instead of on a background worker
+    # (a frozen invocation never drains a queue), and the connection pool is
+    # kept tiny because every concurrent instance holds its own. Vercel sets
+    # VERCEL=1 itself; set SERVERLESS explicitly anywhere else.
+    SERVERLESS: bool = _bool("SERVERLESS", bool(os.getenv("VERCEL")))
     PORT: int = int(os.getenv("PORT", 8010))
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
