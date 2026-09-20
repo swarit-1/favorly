@@ -53,12 +53,13 @@ const _starters = <FavorCategory, String>{
   FavorCategory.other: 'I could use a hand with ',
 };
 
-/// The three honest steps of finding someone. Steps 2 and 3 belong to the one
+/// The four honest steps of finding someone. Steps 2 and 3 belong to the one
 /// helpers call; splitting them names what the matcher is actually doing.
 const _steps = [
   'Reading your ask',
   'Looking around your circle',
   'Picking three people',
+  'Generating smart insights',
 ];
 
 class _AskScreenState extends ConsumerState<AskScreen> {
@@ -203,15 +204,22 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       }
 
       setState(() => _step = 2);
-      final helpers = await TrellisClient.helpers(need.id);
+      // Fetch both concurrently so matches screen has recs ready immediately
+      final helpersF = TrellisClient.helpers(need.id);
+      final recsF = TrellisClient.recommendations(userId, limit: 3);
+
+      final helpers = await helpersF;
       if (!mounted) return;
 
       setState(() => _step = 3);
-      // A breath on the last step, so it reads as a decision, not a flicker.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!mounted) return;
+
+      setState(() => _step = 4);
       await Future<void>.delayed(const Duration(milliseconds: 350));
       if (!mounted) return;
 
-      // The home card learns about the new ask on its next look.
+      final recs = await recsF;
       unawaited(ref.read(asksProvider.notifier).refresh(userId));
 
       await Navigator.of(context).pushReplacement(
@@ -221,6 +229,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             title: need.title,
             whenText: need.whenText,
             initialHelpers: helpers,
+            initialNearby: recs,
           ),
         ),
       );

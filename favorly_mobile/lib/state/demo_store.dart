@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../models/demo_cast.dart';
 import '../models/demo_seed_data.dart';
@@ -11,8 +12,9 @@ import '../models/insurance_models.dart';
 import '../models/unlocks_models.dart';
 import '../models/referrals_models.dart';
 
-final storeProvider =
-    ChangeNotifierProvider<DemoStore>((ref) => DemoStore.seeded());
+final storeProvider = ChangeNotifierProvider<DemoStore>(
+  (ref) => DemoStore.seeded(),
+);
 
 /// Which root tab is showing. Deep screens use it to land people on the
 /// ledger after a handoff.
@@ -61,7 +63,11 @@ class DemoStore extends ChangeNotifier {
   final receipts = <String, ReceiptSplit>{};
   final settlements = <String, List<Settlement>>{};
   final ledger = <String, LedgerRow>{};
-  final experiences = <String, ExperienceRating>{}; // tripId -> ratings map, keyed by "tripId:ratedById:ratedId"
+  final experiences =
+      <
+        String,
+        ExperienceRating
+      >{}; // tripId -> ratings map, keyed by "tripId:ratedById:ratedId"
   final _pendingRequests = <List<ItemDraft>>[];
 
   String _meId = ANA_ID;
@@ -135,7 +141,8 @@ class DemoStore extends ChangeNotifier {
   List<Trip> get recentTrips =>
       _byDeparture.where((t) => !t.isLive).toList().reversed.toList();
 
-  List<List<ItemDraft>> get pendingRequests => List.unmodifiable(_pendingRequests);
+  List<List<ItemDraft>> get pendingRequests =>
+      List.unmodifiable(_pendingRequests);
 
   bool isShopper(Trip t) => t.shopperId == _meId;
 
@@ -152,9 +159,11 @@ class DemoStore extends ChangeNotifier {
       math.max(0, t.caps.maxRequesters - t.requests.length);
 
   List<LedgerRow> get ledgerRows => ledger.values.toList()
-    ..sort((a, b) => b.tripsRun != a.tripsRun
-        ? b.tripsRun.compareTo(a.tripsRun)
-        : b.dollarsCarried.compareTo(a.dollarsCarried));
+    ..sort(
+      (a, b) => b.tripsRun != a.tripsRun
+          ? b.tripsRun.compareTo(a.tripsRun)
+          : b.dollarsCarried.compareTo(a.dollarsCarried),
+    );
 
   SubstitutionPrompt? get promptForMe {
     final p = pendingPrompt;
@@ -224,7 +233,8 @@ class DemoStore extends ChangeNotifier {
       final serviceFee = totalSubtotal * _serviceFeeRate;
       final tip = (totalSubtotal + totalTax) * _tipRate;
 
-      deliveryAppEstimate = totalSubtotal + totalTax + markup + _deliveryFee + serviceFee + tip;
+      deliveryAppEstimate =
+          totalSubtotal + totalTax + markup + _deliveryFee + serviceFee + tip;
       feesAvoided = math.max(0, deliveryAppEstimate - totalPaid);
     }
 
@@ -240,8 +250,9 @@ class DemoStore extends ChangeNotifier {
 
     // Compute carrier savings
     final carrierLedger = ledger[memberId];
-    final carrierTripsThisMonth =
-        trips.where((t) => t.shopperId == memberId && t.status == TripStatus.done).length;
+    final carrierTripsThisMonth = trips
+        .where((t) => t.shopperId == memberId && t.status == TripStatus.done)
+        .length;
     final tripsRun = carrierLedger?.tripsRun ?? 0;
     final dollarsCarried = carrierLedger?.dollarsCarried ?? 0;
 
@@ -253,7 +264,9 @@ class DemoStore extends ChangeNotifier {
             perksEarnedThisMonth: _round(perkValue),
             bulkSavingsThisMonth: _round(bulkSavings),
             totalEarnedThisMonth: _round(perkValue + bulkSavings),
-            tripsCarriedThisMonth: carrierTripsThisMonth > 0 ? carrierTripsThisMonth : tripsRun,
+            tripsCarriedThisMonth: carrierTripsThisMonth > 0
+                ? carrierTripsThisMonth
+                : tripsRun,
           )
         : null;
 
@@ -265,10 +278,10 @@ class DemoStore extends ChangeNotifier {
     );
   }
 
-  TripItem itemById(String tripId, String itemId) => tripById(tripId)
-      .requests
-      .expand((r) => r.items)
-      .firstWhere((i) => i.id == itemId);
+  TripItem itemById(String tripId, String itemId) =>
+      tripById(tripId).requests
+          .expand((r) => r.items)
+          .firstWhere((i) => i.id == itemId);
 
   // ---------------------------------------------------------------------------
   // Storm Mode
@@ -308,10 +321,12 @@ class DemoStore extends ChangeNotifier {
     final monthStart = DateTime(now.year, now.month, 1);
 
     final tripsCarried = trips
-        .where((t) =>
-            t.shopperId == memberId &&
-            t.status == TripStatus.done &&
-            t.departAt.isAfter(monthStart))
+        .where(
+          (t) =>
+              t.shopperId == memberId &&
+              t.status == TripStatus.done &&
+              t.departAt.isAfter(monthStart),
+        )
         .length;
 
     final status = InsuranceStatus(
@@ -319,8 +334,7 @@ class DemoStore extends ChangeNotifier {
       active: tripsCarried >= 3,
       tripsCarriedThisMonth: tripsCarried,
       guaranteedThreshold: 3,
-      expiresAt:
-          tripsCarried >= 3 ? now.add(const Duration(days: 1)) : null,
+      expiresAt: tripsCarried >= 3 ? now.add(const Duration(days: 1)) : null,
     );
 
     insuranceStatuses[memberId] = status;
@@ -328,8 +342,7 @@ class DemoStore extends ChangeNotifier {
   }
 
   /// Check if a member is insurance-eligible (3+ carries this month).
-  bool isInsuranceEligible(String memberId) =>
-      insuranceFor(memberId).active;
+  bool isInsuranceEligible(String memberId) => insuranceFor(memberId).active;
 
   // ---------------------------------------------------------------------------
   // Identity
@@ -351,13 +364,17 @@ class DemoStore extends ChangeNotifier {
       _meId = existing.id;
     } else {
       final id = _id('member');
-      members.add(Member(
-        id: id,
-        name: trimmed,
-        venmoHandle:
-            trimmed.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
-        tint: MemberTint.values[members.length % MemberTint.values.length],
-      ));
+      members.add(
+        Member(
+          id: id,
+          name: trimmed,
+          venmoHandle: trimmed.toLowerCase().replaceAll(
+            RegExp(r'[^a-z0-9]+'),
+            '-',
+          ),
+          tint: MemberTint.values[members.length % MemberTint.values.length],
+        ),
+      );
       ledger[id] = LedgerRow(
         memberId: id,
         tripsRun: 0,
@@ -385,8 +402,9 @@ class DemoStore extends ChangeNotifier {
 
   void updateVenmo(String handle) {
     final i = members.indexWhere((m) => m.id == _meId);
-    members[i] = members[i]
-        .copyWith(venmoHandle: handle.trim().replaceFirst('@', ''));
+    members[i] = members[i].copyWith(
+      venmoHandle: handle.trim().replaceFirst('@', ''),
+    );
     notifyListeners();
   }
 
@@ -464,14 +482,14 @@ class DemoStore extends ChangeNotifier {
 
   // POST /parses source=voice, then the TripDraft parse. Canned for the demo.
   TripDraft tripDraftFromVoice() => TripDraft(
-        store: "Trader Joe's",
-        departAt: todayAt(15, 0),
-        caps: const TripCaps(
-          maxRequesters: 5,
-          maxDollarsPerPerson: 40,
-          maxItemsPerPerson: 8,
-        ),
-      );
+    store: "Trader Joe's",
+    departAt: todayAt(15, 0),
+    caps: const TripCaps(
+      maxRequesters: 5,
+      maxDollarsPerPerson: 40,
+      maxItemsPerPerson: 8,
+    ),
+  );
 
   static DateTime todayAt(int hour, int minute) {
     final n = DateTime.now();
@@ -517,13 +535,13 @@ class DemoStore extends ChangeNotifier {
       'and two lemons. Nothing over six bucks each.”';
 
   static List<ItemDraft> get voiceDrafts => [
-        for (final d in handwrittenDrafts)
-          d.copyWith(
-            maxPrice: 6.0,
-            needsConfirmation: d.name == 'Lemons',
-            hint: d.name == 'Lemons' ? 'Heard “two”. Double-check the count' : null,
-          ),
-      ];
+    for (final d in handwrittenDrafts)
+      d.copyWith(
+        maxPrice: 6.0,
+        needsConfirmation: d.name == 'Lemons',
+        hint: d.name == 'Lemons' ? 'Heard “two”. Double-check the count' : null,
+      ),
+  ];
 
   // POST /parses (text | photo | voice)
   List<ItemDraft> drafts(IntakeSource source, {String text = ''}) =>
@@ -547,9 +565,26 @@ class DemoStore extends ChangeNotifier {
   };
 
   static const _units = [
-    'bunch', 'loaf', 'loaves', 'carton', 'bag', 'box', 'pack', 'bottle',
-    'can', 'jar', 'lb', 'lbs', 'pound', 'pounds', 'gallon', 'quart', 'pint',
-    'head', 'bar', 'dozen',
+    'bunch',
+    'loaf',
+    'loaves',
+    'carton',
+    'bag',
+    'box',
+    'pack',
+    'bottle',
+    'can',
+    'jar',
+    'lb',
+    'lbs',
+    'pound',
+    'pounds',
+    'gallon',
+    'quart',
+    'pint',
+    'head',
+    'bar',
+    'dozen',
   ];
 
   /// Deterministic text parse. The real app sends the text to the VLM; this
@@ -600,7 +635,8 @@ class DemoStore extends ChangeNotifier {
         qty = _numberWords[word.group(1)!.toLowerCase()] ?? 1;
         text = word.group(2)!;
       } else {
-        final trail = RegExp(r'^(.+?)\s*(?:[xX]\s*(\d+)|\s(\d+))$').firstMatch(text);
+        final trail = RegExp(r'^(.+?)\s*(?:[xX]\s*(\d+)|\s(\d+))$')
+            .firstMatch(text);
         if (trail != null) {
           qty = int.parse((trail.group(2) ?? trail.group(3))!);
           text = trail.group(1)!;
@@ -609,14 +645,18 @@ class DemoStore extends ChangeNotifier {
     }
 
     final unitPattern = _units.join('|');
-    final unitLead = RegExp('^($unitPattern)\\s+of\\s+(.+)\$', caseSensitive: false)
-        .firstMatch(text);
+    final unitLead = RegExp(
+      '^($unitPattern)\\s+of\\s+(.+)\$',
+      caseSensitive: false,
+    ).firstMatch(text);
     if (unitLead != null) {
       unit = unitLead.group(1)!.toLowerCase();
       text = unitLead.group(2)!;
     } else {
-      final unitTrail =
-          RegExp('^(.+?)\\s+($unitPattern)\$', caseSensitive: false).firstMatch(text);
+      final unitTrail = RegExp(
+        '^(.+?)\\s+($unitPattern)\$',
+        caseSensitive: false,
+      ).firstMatch(text);
       if (unitTrail != null) {
         unit = unitTrail.group(2)!.toLowerCase();
         text = unitTrail.group(1)!;
@@ -644,15 +684,17 @@ class DemoStore extends ChangeNotifier {
       hint: !ambiguous
           ? null
           : flagged
-              ? 'You marked this with a question mark'
-              : 'Too short to be sure what it is',
+          ? 'You marked this with a question mark'
+          : 'Too short to be sure what it is',
     );
   }
 
-  double estimatedMax(Iterable<ItemDraft> drafts) => _round(drafts.fold(
-        0.0,
-        (sum, d) => sum + (d.maxPrice ?? unitPriceFor(d.name) * d.qty),
-      ));
+  double estimatedMax(Iterable<ItemDraft> drafts) => _round(
+    drafts.fold(
+      0.0,
+      (sum, d) => sum + (d.maxPrice ?? unitPriceFor(d.name) * d.qty),
+    ),
+  );
 
   // PATCH /parses/{id}/confirm, then POST /trips/{id}/requests
   TripRequest attachRequest(String tripId, List<ItemDraft> drafts) {
@@ -685,10 +727,14 @@ class DemoStore extends ChangeNotifier {
   // PATCH /requests/{id} accept | decline
   void setTaking(String tripId, String requestId, bool taking) {
     final trip = tripById(tripId);
-    _replaceTrip(trip.copyWith(requests: [
-      for (final r in trip.requests)
-        r.id == requestId ? r.copyWith(taking: taking) : r,
-    ]));
+    _replaceTrip(
+      trip.copyWith(
+        requests: [
+          for (final r in trip.requests)
+            r.id == requestId ? r.copyWith(taking: taking) : r,
+        ],
+      ),
+    );
     notifyListeners();
   }
 
@@ -702,7 +748,9 @@ class DemoStore extends ChangeNotifier {
       tripId,
       itemId,
       (i) => i.copyWith(
-        status: i.status == ItemStatus.got ? ItemStatus.pending : ItemStatus.got,
+        status: i.status == ItemStatus.got
+            ? ItemStatus.pending
+            : ItemStatus.got,
       ),
     );
     notifyListeners();
@@ -716,7 +764,11 @@ class DemoStore extends ChangeNotifier {
   void skipRemaining(String tripId) {
     for (final item in tripById(tripId).items) {
       if (item.isOpen) {
-        _updateItem(tripId, item.id, (i) => i.copyWith(status: ItemStatus.skipped));
+        _updateItem(
+          tripId,
+          item.id,
+          (i) => i.copyWith(status: ItemStatus.skipped),
+        );
       }
     }
     notifyListeners();
@@ -749,7 +801,11 @@ class DemoStore extends ChangeNotifier {
     final p = pendingPrompt;
     if (p == null || p.id != promptId) return;
     if (chosenIndex == null) {
-      _updateItem(p.tripId, p.itemId, (i) => i.copyWith(status: ItemStatus.skipped));
+      _updateItem(
+        p.tripId,
+        p.itemId,
+        (i) => i.copyWith(status: ItemStatus.skipped),
+      );
     } else {
       final c = p.candidates[chosenIndex];
       _updateItem(
@@ -890,26 +946,33 @@ class DemoStore extends ChangeNotifier {
       final price = substituted
           ? (item.substitutePrice ?? unitPriceFor(item.name))
           : _round(unitPriceFor(item.name) * item.qty);
-      lines.add(ReceiptLine(
-        lineNo: ++n,
-        description: receiptLabel(item.displayName, qty: substituted ? 1 : item.qty),
-        total: price,
-        itemId: item.id,
-        assignedTo: substituted ? null : item.requesterId,
-        ambiguous: substituted,
-        options: substituted ? [trip.shopperId, ...requesterIds] : const [],
-      ));
+      lines.add(
+        ReceiptLine(
+          lineNo: ++n,
+          description: receiptLabel(
+            item.displayName,
+            qty: substituted ? 1 : item.qty,
+          ),
+          total: price,
+          itemId: item.id,
+          assignedTo: substituted ? null : item.requesterId,
+          ambiguous: substituted,
+          options: substituted ? [trip.shopperId, ...requesterIds] : const [],
+        ),
+      );
     }
     for (final own in const [
       ('COFFEE BEANS 12OZ', 8.99),
       ('PIZZA MARGHERITA FRZ', 5.49),
     ]) {
-      lines.add(ReceiptLine(
-        lineNo: ++n,
-        description: own.$1,
-        total: own.$2,
-        assignedTo: trip.shopperId,
-      ));
+      lines.add(
+        ReceiptLine(
+          lineNo: ++n,
+          description: own.$1,
+          total: own.$2,
+          assignedTo: trip.shopperId,
+        ),
+      );
     }
     final subtotal = _round(lines.fold(0.0, (s, l) => s + l.total));
     final tax = _round(subtotal * 0.0325);
@@ -937,7 +1000,8 @@ class DemoStore extends ChangeNotifier {
   ) {
     final dlat = (lat2 - lat1) * math.pi / 180;
     final dlng = (lng2 - lng1) * math.pi / 180;
-    final a = math.sin(dlat / 2) * math.sin(dlat / 2) +
+    final a =
+        math.sin(dlat / 2) * math.sin(dlat / 2) +
         math.cos(lat1 * math.pi / 180) *
             math.cos(lat2 * math.pi / 180) *
             math.sin(dlng / 2) *
@@ -959,13 +1023,40 @@ class DemoStore extends ChangeNotifier {
     return _computeDistance(aLat, aLng, bLat, bLng);
   }
 
+  /// Resolve a store name to its geographic coordinates using BostonDemoData.
+  /// Uses fuzzy matching (substring search) to handle slight variations.
+  /// Returns null if the store is not found.
+  LatLng? storeCoordinates(String storeName) {
+    if (storeName.isEmpty) return null;
+
+    // Exact match first
+    for (final (name, lat, lng) in BostonDemoData.stores) {
+      if (name.toLowerCase() == storeName.toLowerCase()) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    // Fuzzy match: substring search (case-insensitive)
+    final queryLower = storeName.toLowerCase();
+    for (final (name, lat, lng) in BostonDemoData.stores) {
+      if (name.toLowerCase().contains(queryLower)) {
+        return LatLng(lat, lng);
+      }
+    }
+
+    // No match found
+    return null;
+  }
+
   // PATCH /receipts/{id}/assignments
   void assignLine(String tripId, int lineNo, String memberId) {
     final split = receipts[tripId]!;
-    receipts[tripId] = split.copyWith(lines: [
-      for (final l in split.lines)
-        l.lineNo == lineNo ? l.copyWith(assignedTo: memberId) : l,
-    ]);
+    receipts[tripId] = split.copyWith(
+      lines: [
+        for (final l in split.lines)
+          l.lineNo == lineNo ? l.copyWith(assignedTo: memberId) : l,
+      ],
+    );
     notifyListeners();
   }
 
@@ -976,27 +1067,33 @@ class DemoStore extends ChangeNotifier {
     final shopper = memberById(trip.shopperId);
     final result = <Settlement>[];
     for (final r in trip.requests.where((r) => r.taking)) {
-      final mine =
-          split.lines.where((l) => l.assignedTo == r.requesterId).toList();
+      final mine = split.lines
+          .where((l) => l.assignedTo == r.requesterId)
+          .toList();
       if (mine.isEmpty) continue;
       final subtotal = _round(mine.fold(0.0, (s, l) => s + l.total));
       final taxShare = _round(split.tax * subtotal / split.subtotal);
       final total = _round(subtotal + taxShare);
       final note = Uri.encodeComponent('Favorly · ${trip.store}');
-      result.add(Settlement(
-        id: _id('settle'),
-        tripId: tripId,
-        requesterId: r.requesterId,
-        lines: [
-          for (final l in mine)
-            SettlementLine(description: _prettyLine(trip, l), amount: l.total),
-        ],
-        subtotal: subtotal,
-        taxShare: taxShare,
-        total: total,
-        venmoLink:
-            'https://venmo.com/${shopper.venmoHandle}?txn=pay&amount=${total.toStringAsFixed(2)}&note=$note',
-      ));
+      result.add(
+        Settlement(
+          id: _id('settle'),
+          tripId: tripId,
+          requesterId: r.requesterId,
+          lines: [
+            for (final l in mine)
+              SettlementLine(
+                description: _prettyLine(trip, l),
+                amount: l.total,
+              ),
+          ],
+          subtotal: subtotal,
+          taxShare: taxShare,
+          total: total,
+          venmoLink:
+              'https://venmo.com/${shopper.venmoHandle}?txn=pay&amount=${total.toStringAsFixed(2)}&note=$note',
+        ),
+      );
     }
     settlements[tripId] = result;
     _replaceTrip(trip.copyWith(status: TripStatus.settling));
@@ -1038,7 +1135,10 @@ class DemoStore extends ChangeNotifier {
       ),
     );
     for (final r in trip.requests.where((r) => r.taking)) {
-      _bump(r.requesterId, (x) => x.copyWith(favorsReceived: x.favorsReceived + 1));
+      _bump(
+        r.requesterId,
+        (x) => x.copyWith(favorsReceived: x.favorsReceived + 1),
+      );
     }
     _replaceTrip(trip.copyWith(status: TripStatus.done));
     lastCompletedTripId = tripId;
@@ -1084,27 +1184,30 @@ class DemoStore extends ChangeNotifier {
   }
 
   /// GET /experiences?ratedId={memberId}
-  List<ExperienceRating> ratingsFor(String memberId) => experiences.values
-      .where((e) => e.ratedId == memberId)
-      .toList()
+  List<ExperienceRating> ratingsFor(String memberId) =>
+      experiences.values.where((e) => e.ratedId == memberId).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   /// GET /experiences?ratedById={memberId}
-  List<ExperienceRating> ratingsFrom(String memberId) => experiences.values
-      .where((e) => e.ratedById == memberId)
-      .toList()
+  List<ExperienceRating> ratingsFrom(String memberId) =>
+      experiences.values.where((e) => e.ratedById == memberId).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   /// Compute compatibility score between two members (0.0 to 1.0).
   /// Factors: number of trips together, average rating given to each other,
   /// directional feedback balance.
   MemberCompatibility compatibilityScore(String id1, String id2) {
-    final ratings1to2 =
-        experiences.values.where((e) => e.ratedById == id1 && e.ratedId == id2).toList();
-    final ratings2to1 =
-        experiences.values.where((e) => e.ratedById == id2 && e.ratedId == id1).toList();
+    final ratings1to2 = experiences.values
+        .where((e) => e.ratedById == id1 && e.ratedId == id2)
+        .toList();
+    final ratings2to1 = experiences.values
+        .where((e) => e.ratedById == id2 && e.ratedId == id1)
+        .toList();
 
-    final tripsWorked = {...ratings1to2.map((r) => r.tripId), ...ratings2to1.map((r) => r.tripId)}.length;
+    final tripsWorked = {
+      ...ratings1to2.map((r) => r.tripId),
+      ...ratings2to1.map((r) => r.tripId),
+    }.length;
 
     if (tripsWorked == 0) {
       return MemberCompatibility(
@@ -1119,7 +1222,8 @@ class DemoStore extends ChangeNotifier {
     final allRatings = [...ratings1to2, ...ratings2to1];
     final avgRating = allRatings.isEmpty
         ? 0.0
-        : allRatings.fold(0.0, (sum, r) => sum + r.overallRating) / allRatings.length;
+        : allRatings.fold(0.0, (sum, r) => sum + r.overallRating) /
+              allRatings.length;
 
     // Score factor: frequency (max 0.6) + quality (max 0.4)
     // More trips = better, higher ratings = better
@@ -1138,7 +1242,10 @@ class DemoStore extends ChangeNotifier {
 
   /// Recommend members who would be good trip partners for [memberId]
   /// based on past experience. Returns sorted by compatibility score.
-  List<(Member, MemberCompatibility)> recommendedPartners(String memberId, {int limit = 3}) {
+  List<(Member, MemberCompatibility)> recommendedPartners(
+    String memberId, {
+    int limit = 3,
+  }) {
     final scores = <MemberCompatibility>[];
     for (final other in members) {
       if (other.id == memberId) continue;
@@ -1149,7 +1256,8 @@ class DemoStore extends ChangeNotifier {
     }
     scores.sort((a, b) => b.score.compareTo(a.score));
     return [
-      for (final score in scores.take(limit)) (memberById(score.memberId2), score),
+      for (final score in scores.take(limit))
+        (memberById(score.memberId2), score),
     ];
   }
 
@@ -1161,37 +1269,134 @@ class DemoStore extends ChangeNotifier {
     final n = name.toLowerCase();
     bool has(List<String> words) => words.any(n.contains);
     if (has(const [
-      'banana', 'lemon', 'apple', 'avocado', 'berr', 'tomato', 'onion',
-      'garlic', 'lettuce', 'spinach', 'kale', 'cilantro', 'lime', 'orange',
-      'grape', 'pepper', 'potato', 'carrot', 'cucumber', 'herb', 'salad',
+      'banana',
+      'lemon',
+      'apple',
+      'avocado',
+      'berr',
+      'tomato',
+      'onion',
+      'garlic',
+      'lettuce',
+      'spinach',
+      'kale',
+      'cilantro',
+      'lime',
+      'orange',
+      'grape',
+      'pepper',
+      'potato',
+      'carrot',
+      'cucumber',
+      'herb',
+      'salad',
     ])) {
       return StoreSection.produce;
     }
-    if (has(const ['sourdough', 'bread', 'bagel', 'loaf', 'croissant', 'muffin', 'tortilla', 'bun'])) {
+    if (has(const [
+      'sourdough',
+      'bread',
+      'bagel',
+      'loaf',
+      'croissant',
+      'muffin',
+      'tortilla',
+      'bun',
+    ])) {
       return StoreSection.bakery;
     }
-    if (has(const ['chicken', 'beef', 'pork', 'turkey', 'salmon', 'fish', 'shrimp', 'steak', 'sausage', 'bacon'])) {
+    if (has(const [
+      'chicken',
+      'beef',
+      'pork',
+      'turkey',
+      'salmon',
+      'fish',
+      'shrimp',
+      'steak',
+      'sausage',
+      'bacon',
+    ])) {
       return StoreSection.meat;
     }
-    if (has(const ['milk', 'butter', 'yogurt', 'cheese', 'egg', 'cream', 'kefir'])) {
+    if (has(const [
+      'milk',
+      'butter',
+      'yogurt',
+      'cheese',
+      'egg',
+      'cream',
+      'kefir',
+    ])) {
       return StoreSection.dairy;
     }
-    if (has(const ['frozen', 'dumpling', 'gyoza', 'ice cream', 'pizza', 'waffle'])) {
+    if (has(const [
+      'frozen',
+      'dumpling',
+      'gyoza',
+      'ice cream',
+      'pizza',
+      'waffle',
+    ])) {
       return StoreSection.frozen;
     }
-    if (has(const ['water', 'sparkling', 'juice', 'coffee', 'tea', 'soda', 'kombucha', 'beer', 'wine'])) {
+    if (has(const [
+      'water',
+      'sparkling',
+      'juice',
+      'coffee',
+      'tea',
+      'soda',
+      'kombucha',
+      'beer',
+      'wine',
+    ])) {
       return StoreSection.beverages;
     }
-    if (has(const ['paper towel', 'toilet', 'detergent', 'sponge', 'trash', 'foil', 'soap', 'dish'])) {
+    if (has(const [
+      'paper towel',
+      'toilet',
+      'detergent',
+      'sponge',
+      'trash',
+      'foil',
+      'soap',
+      'dish',
+    ])) {
       return StoreSection.household;
     }
-    if (has(const ['shampoo', 'toothpaste', 'deodorant', 'lotion', 'razor', 'floss', 'sunscreen'])) {
+    if (has(const [
+      'shampoo',
+      'toothpaste',
+      'deodorant',
+      'lotion',
+      'razor',
+      'floss',
+      'sunscreen',
+    ])) {
       return StoreSection.personalCare;
     }
     if (has(const [
-      'chocolate', 'rice', 'pasta', 'bean', 'cereal', 'oat', 'granola',
-      'peanut', 'almond', 'honey', 'oil', 'flour', 'sugar', 'salt', 'sauce',
-      'chips', 'cracker', 'snack', 'nut', 'soup',
+      'chocolate',
+      'rice',
+      'pasta',
+      'bean',
+      'cereal',
+      'oat',
+      'granola',
+      'peanut',
+      'almond',
+      'honey',
+      'oil',
+      'flour',
+      'sugar',
+      'salt',
+      'sauce',
+      'chips',
+      'cracker',
+      'snack',
+      'nut',
+      'soup',
     ])) {
       return StoreSection.pantry;
     }
@@ -1284,17 +1489,27 @@ class DemoStore extends ChangeNotifier {
     TripItem Function(TripItem) update,
   ) {
     final t = tripById(tripId);
-    _replaceTrip(t.copyWith(requests: [
-      for (final r in t.requests)
-        r.copyWith(items: [
-          for (final i in r.items) i.id == itemId ? update(i) : i,
-        ]),
-    ]));
+    _replaceTrip(
+      t.copyWith(
+        requests: [
+          for (final r in t.requests)
+            r.copyWith(
+              items: [for (final i in r.items) i.id == itemId ? update(i) : i],
+            ),
+        ],
+      ),
+    );
   }
 
   void _bump(String memberId, LedgerRow Function(LedgerRow) update) {
-    final row = ledger[memberId] ??
-        LedgerRow(memberId: memberId, tripsRun: 0, favorsReceived: 0, dollarsCarried: 0);
+    final row =
+        ledger[memberId] ??
+        LedgerRow(
+          memberId: memberId,
+          tripsRun: 0,
+          favorsReceived: 0,
+          dollarsCarried: 0,
+        );
     ledger[memberId] = update(row);
   }
 
@@ -1306,18 +1521,17 @@ class DemoStore extends ChangeNotifier {
     String? note,
     double? maxPrice,
     ItemStatus status = ItemStatus.pending,
-  }) =>
-      TripItem(
-        id: _id('item'),
-        requesterId: requesterId,
-        name: name,
-        qty: qty,
-        unit: unit,
-        note: note,
-        maxPrice: maxPrice,
-        section: sectionFor(name),
-        status: status,
-      );
+  }) => TripItem(
+    id: _id('item'),
+    requesterId: requesterId,
+    name: name,
+    qty: qty,
+    unit: unit,
+    note: note,
+    maxPrice: maxPrice,
+    section: sectionFor(name),
+    status: status,
+  );
 
   List<Trip> _generateTrips(
     DateTime now,
@@ -1333,24 +1547,51 @@ class DemoStore extends ChangeNotifier {
 
     final itemSamples = {
       'groceries': [
-        'Oat Milk', 'Almond Milk', 'Greek Yogurt', 'Organic Coffee',
-        'Frozen Berries', 'Spinach', 'Organic Kale', 'Olive Oil',
-        'Almond Flour', 'Pasta', 'Hummus', 'Cheese', 'Eggs'
+        'Oat Milk',
+        'Almond Milk',
+        'Greek Yogurt',
+        'Organic Coffee',
+        'Frozen Berries',
+        'Spinach',
+        'Organic Kale',
+        'Olive Oil',
+        'Almond Flour',
+        'Pasta',
+        'Hummus',
+        'Cheese',
+        'Eggs',
       ],
       'snacks': [
-        'Dark Chocolate', 'Almonds', 'Sparkling Water', 'Granola',
-        'Protein Bar', 'Trail Mix', 'Crackers', 'Chips'
+        'Dark Chocolate',
+        'Almonds',
+        'Sparkling Water',
+        'Granola',
+        'Protein Bar',
+        'Trail Mix',
+        'Crackers',
+        'Chips',
       ],
       'household': [
-        'Toilet Paper', 'Paper Towels', 'Dish Soap', 'Laundry Detergent',
-        'Toothpaste', 'Shampoo', 'Deodorant', 'Trash Bags'
+        'Toilet Paper',
+        'Paper Towels',
+        'Dish Soap',
+        'Laundry Detergent',
+        'Toothpaste',
+        'Shampoo',
+        'Deodorant',
+        'Trash Bags',
       ],
     };
 
     final trips = <Trip>[];
 
     // Completed trips from past week (for settlements and history)
-    final completedStores = ['Costco', 'Whole Foods', "Trader Joe's", 'Market Basket'];
+    final completedStores = [
+      'Costco',
+      'Whole Foods',
+      "Trader Joe's",
+      'Market Basket',
+    ];
     for (var i = 0; i < 12; i++) {
       final shopper = members[i % members.length];
       final store = completedStores[i % completedStores.length];
@@ -1361,7 +1602,8 @@ class DemoStore extends ChangeNotifier {
       final tripRequests = <TripRequest>[];
       for (var j = 0; j < requestCount; j++) {
         final requester = members[(i + j + 1) % members.length];
-        final itemCategory = itemSamples.entries.toList()[j % itemSamples.length];
+        final itemCategory = itemSamples.entries
+            .toList()[j % itemSamples.length];
         final itemCount = 2 + (j % 3);
 
         tripRequests.add(
@@ -1389,14 +1631,24 @@ class DemoStore extends ChangeNotifier {
           store: store,
           departAt: at(dayOffset, 9 + (i % 12), (i * 15) % 60),
           status: TripStatus.done,
-          caps: const TripCaps(maxRequesters: 6, maxDollarsPerPerson: 50, maxItemsPerPerson: 10),
+          caps: const TripCaps(
+            maxRequesters: 6,
+            maxDollarsPerPerson: 50,
+            maxItemsPerPerson: 10,
+          ),
           requests: tripRequests,
         ),
       );
     }
 
     // Active/upcoming trips (today and tomorrow)
-    final activeStores = ["Trader Joe's", 'Whole Foods', 'CVS', 'Market Basket', 'Target'];
+    final activeStores = [
+      "Trader Joe's",
+      'Whole Foods',
+      'CVS',
+      'Market Basket',
+      'Target',
+    ];
     for (var i = 0; i < 5; i++) {
       final shopper = members[(i * 3) % members.length];
       final store = activeStores[i % activeStores.length];
@@ -1407,7 +1659,8 @@ class DemoStore extends ChangeNotifier {
       final tripRequests = <TripRequest>[];
       for (var j = 0; j < requestCount; j++) {
         final requester = members[(i + j + 2) % members.length];
-        final itemCategory = itemSamples.entries.toList()[j % itemSamples.length];
+        final itemCategory = itemSamples.entries
+            .toList()[j % itemSamples.length];
         final itemCount = 1 + (j % 3);
 
         tripRequests.add(
@@ -1433,7 +1686,11 @@ class DemoStore extends ChangeNotifier {
           circleId: DEMO_CIRCLE_ID,
           store: store,
           departAt: at(dayOffset, hour, 0),
-          caps: const TripCaps(maxRequesters: 5, maxDollarsPerPerson: 40, maxItemsPerPerson: 8),
+          caps: const TripCaps(
+            maxRequesters: 5,
+            maxDollarsPerPerson: 40,
+            maxItemsPerPerson: 8,
+          ),
           requests: tripRequests,
         ),
       );
@@ -1448,7 +1705,20 @@ class DemoStore extends ChangeNotifier {
     members
       ..clear()
       ..addAll([
-        for (final (id, name, venmo, tint, _, __, address, bio, dietary, stores, availability, role)
+        for (final (
+              id,
+              name,
+              venmo,
+              tint,
+              _,
+              __,
+              address,
+              bio,
+              dietary,
+              stores,
+              availability,
+              role,
+            )
             in BostonDemoData.members)
           Member(
             id: id,
@@ -1480,7 +1750,12 @@ class DemoStore extends ChangeNotifier {
         DateTime(now.year, now.month, now.day + dayOffset, hour, minute);
     // The live trip always leaves a couple of hours from now, on the hour, so
     // the demo reads the same at 10 AM or 10 PM.
-    final leaves = DateTime(now.year, now.month, now.day, now.hour).add(const Duration(hours: 2));
+    final leaves = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+    ).add(const Duration(hours: 2));
     var sinceSaturday = (now.weekday - DateTime.saturday) % 7;
     if (sinceSaturday == 0) sinceSaturday = 7;
 
@@ -1584,7 +1859,8 @@ class DemoStore extends ChangeNotifier {
             taxShare: taxShare,
             total: total,
             lines: [],
-            venmoLink: 'venmo.com/${memberById(trip.shopperId).venmoHandle}?txn=${trip.store}',
+            venmoLink:
+                'venmo.com/${memberById(trip.shopperId).venmoHandle}?txn=${trip.store}',
             paid: paid,
           ),
         );
@@ -1639,7 +1915,10 @@ class DemoStore extends ChangeNotifier {
       nextMilestoneThreshold = 50;
       nextMilestoneDescription = 'Coffee Machine ☕';
       nextMilestoneFavorsRemaining = 50 - favorsThisMonth;
-      availableUnlocks.addAll([UnlockType.pizzaNight, UnlockType.coffeeMachine]);
+      availableUnlocks.addAll([
+        UnlockType.pizzaNight,
+        UnlockType.coffeeMachine,
+      ]);
     } else if (favorsThisMonth < 100) {
       nextMilestoneThreshold = 100;
       nextMilestoneDescription = 'Lobby Upgrade 🏢';
@@ -1647,7 +1926,7 @@ class DemoStore extends ChangeNotifier {
       availableUnlocks.addAll([
         UnlockType.pizzaNight,
         UnlockType.coffeeMachine,
-        UnlockType.lobbyUpgrade
+        UnlockType.lobbyUpgrade,
       ]);
     } else {
       // All unlocked
@@ -1655,14 +1934,16 @@ class DemoStore extends ChangeNotifier {
         UnlockType.pizzaNight,
         UnlockType.coffeeMachine,
         UnlockType.lobbyUpgrade,
-        UnlockType.communityLunch
+        UnlockType.communityLunch,
       ]);
     }
 
     // Compute progress percentage
     final milestone = nextMilestoneThreshold ?? 100;
-    final progressPercentage =
-        (favorsThisMonth / milestone * 100).clamp(0.0, 100.0);
+    final progressPercentage = (favorsThisMonth / milestone * 100).clamp(
+      0.0,
+      100.0,
+    );
 
     final status = CircleUnlockStatus(
       circleId: circleId,
@@ -1674,7 +1955,7 @@ class DemoStore extends ChangeNotifier {
       claimedUnlocks: [
         // Map claimed unlock types to CircleUnlock objects
         for (final unlockedType in claimedUnlocks)
-          _createCircleUnlock(unlockedType)
+          _createCircleUnlock(unlockedType),
       ],
       availableUnlocks: availableUnlocks,
     );
@@ -1708,10 +1989,10 @@ class DemoStore extends ChangeNotifier {
       favorsAtUnlock: unlockType == UnlockType.pizzaNight
           ? 25
           : unlockType == UnlockType.coffeeMachine
-              ? 50
-              : unlockType == UnlockType.lobbyUpgrade
-                  ? 100
-                  : 0,
+          ? 50
+          : unlockType == UnlockType.lobbyUpgrade
+          ? 100
+          : 0,
       claimedAt: DateTime.now(),
     );
   }

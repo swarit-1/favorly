@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from db.client import get_supabase_client
-from shared.contracts.models import Trip, TripCaps, TripStatus, Item, Request as RequestModel, User
+from shared.contracts.models import Trip, TripCaps, TripStatus, Item, Request as RequestModel, User, RequestStatus, StoreSection
 from shared.timestamps import parse_timestamp
 from shared.notify import write_notification
 
@@ -25,6 +25,16 @@ class CreateTripRequest(BaseModel):
 class UpdateTripStatusRequest(BaseModel):
     """Update trip status."""
     status: TripStatus
+
+
+class TripSuggestion(BaseModel):
+    """A request that fits this trip."""
+    request_id: str
+    trip_id: str
+    requester_name: str
+    items: List[str]
+    score: float
+    nudge: str
 
 
 @router.post("", response_model=Trip)
@@ -187,3 +197,77 @@ async def update_trip_status(trip_id: UUID, req: UpdateTripStatusRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{trip_id}/suggestions", response_model=List[TripSuggestion])
+async def get_trip_suggestions(trip_id: UUID, limit: int = 5):
+    """Pending requests in this circle that score well against this trip."""
+    supabase = get_supabase_client()
+
+    trip_response = supabase.table("trips").select("*").eq("id", str(trip_id)).execute()
+    if not trip_response.data:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    trip_data = trip_response.data[0]
+    trip = Trip(
+        id=trip_data["id"], shopper_id=trip_data["shopper_id"],
+        circle_id=trip_data["circle_id"], store=trip_data["store"],
+        depart_at=parse_timestamp(trip_data["depart_at"]),
+        caps=TripCaps(**trip_data["caps"]),
+        status=TripStatus(trip_data["status"]),
+        created_at=parse_timestamp(trip_data["created_at"]),
+    )
+
+    # Open trips in same circle, excluding this one
+    open_trips = supabase.table("trips").select("id") \
+        .eq("circle_id", str(trip.circle_id)) \
+        .eq("status", TripStatus.OPEN.value) \
+        .neq("id", str(trip_id)).execute()
+    open_trip_ids = [t["id"] for t in (open_trips.data or [])]
+    if not open_trip_ids:
+        return []
+
+    # Pending requests on those trips, not from the shopper
+    requests_resp = supabase.table("requests").select("id, trip_id, requester_id") \
+        .in_("trip_id", open_trip_ids) \
+        .eq("status", RequestStatus.PENDING.value) \
+        .neq("requester_id", str(trip.shopper_id)).execute()
+    if not requests_resp.data:
+        return []
+
+    request_ids = [r["id"] for r in requests_resp.data]
+    items_resp = supabase.table("items").select("request_id, name, section") \
+        .in_("request_id", request_ids).execute()
+
+    requester_ids = list({r["requester_id"] for r in requests_resp.data})
+    users_resp = supabase.table("users").select("id, name").in_("id", requester_ids).execute()
+    name_by_id = {u["id"]: u["name"] for u in (users_resp.data or [])}
+
+    items_by_request: dict[str, list] = {}
+    names_by_request: dict[str, list[str]] = {}
+    for item in (items_resp.data or []):
+        rid = item["request_id"]
+        items_by_request.setdefault(rid, []).append(StoreSection(item["section"]))
+        names_by_request.setdefault(rid, []).append(item["name"])
+
+    from matching.engine import recommend_asks_for_trip
+    asks = [(r["id"], items_by_request.get(r["id"], [StoreSection.OTHER])) for r in requests_resp.data]
+    scored = recommend_asks_for_trip(asks, trip, current_requesters=0)
+
+    results = []
+    for ask_id, score in scored[:limit]:
+        req = next(r for r in requests_resp.data if r["id"] == ask_id)
+        requester_name = name_by_id.get(req["requester_id"], "A neighbor")
+        item_list = names_by_request.get(ask_id, [])
+        summary = ", ".join(item_list[:3]) + (f" +{len(item_list)-3} more" if len(item_list) > 3 else "")
+        if score >= 0.8:
+            nudge = f"Perfect match — {requester_name} needs {summary} from {trip.store}."
+        elif score >= 0.6:
+            nudge = f"Good fit — {summary} is likely at {trip.store}."
+        else:
+            nudge = f"Possible pickup — {summary} might be on your route."
+        results.append(TripSuggestion(
+            request_id=ask_id, trip_id=req["trip_id"],
+            requester_name=requester_name, items=item_list,
+            score=score, nudge=nudge,
+        ))
+    return results

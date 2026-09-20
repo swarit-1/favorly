@@ -15,6 +15,7 @@ import '../widgets/page.dart';
 import '../widgets/people.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/voice_sheet.dart';
+import 'trip_suggestions_screen.dart';
 
 class PostTripScreen extends ConsumerStatefulWidget {
   const PostTripScreen({super.key});
@@ -31,6 +32,7 @@ class _PostTripScreenState extends ConsumerState<PostTripScreen> {
   TripCaps _caps = const TripCaps();
   String? _transcript;
   String? _storeError;
+  bool _posting = false;
 
   static DateTime _roundUp(DateTime t) {
     final minutes = ((t.minute + 14) ~/ 15) * 15;
@@ -119,20 +121,33 @@ class _PostTripScreenState extends ConsumerState<PostTripScreen> {
       return;
     }
 
+    setState(() => _posting = true);
     try {
-      await ApiClient.createTrip(
+      final tripData = await ApiClient.createTrip(
         store: name,
         departAt: _departAt,
         userId: authState.userId!,
       );
 
       if (!mounted) return;
+      setState(() => _posting = false);
+      final tripId = tripData['id'] as String? ?? '';
+
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => TripSuggestionsScreen(
+            tripId: tripId,
+            store: name,
+            departAt: _departAt,
+          ),
+        ),
+      );
+
+      if (!mounted) return;
       popToRoot(context);
-      messenger.showSnackBar(SnackBar(
-        content: Text('Trip posted. Neighbors can add lists until ${clock(_departAt)}.'),
-      ));
     } catch (e) {
       if (!mounted) return;
+      setState(() => _posting = false);
       messenger.showSnackBar(SnackBar(
         content: Text('Error posting trip: $e'),
         backgroundColor: Colors.red,
@@ -276,7 +291,11 @@ class _PostTripScreenState extends ConsumerState<PostTripScreen> {
       ],
       bottom: BottomActions(
         children: [
-          FButton(label: 'Post trip', onPressed: _post),
+          FButton(
+            label: 'Post trip',
+            busy: _posting,
+            onPressed: _posting ? null : _post,
+          ),
           FButton(
             label: _transcript == null ? 'Say it instead' : 'Say it again',
             icon: CupertinoIcons.mic,
