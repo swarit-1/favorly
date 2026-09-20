@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
+import '../providers/auth_provider.dart';
 import '../state/demo_store.dart';
 import '../theme/tokens.dart';
 import '../util/format.dart';
@@ -9,7 +10,6 @@ import '../util/nav.dart';
 import '../widgets/buttons.dart';
 import '../widgets/chips.dart';
 import '../widgets/page.dart';
-import '../widgets/people.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/trip_hero.dart';
 import 'add_list_screen.dart';
@@ -23,8 +23,12 @@ class TripsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
     final store = ref.watch(storeProvider);
-    final me = store.me;
+
+    // Use auth data if available, fall back to demo store
+    final userName = authState.name ?? store.me.name;
+    final firstName = userName.split(' ').first;
     final active = store.activeTrip;
     final upcoming = store.upcomingTrips;
     final recent = store.recentTrips;
@@ -34,17 +38,17 @@ class TripsScreen extends ConsumerWidget {
       children: [
         Row(
           children: [
-            const _CircleTag(label: DemoStore.circleName),
+            const _CircleTag(label: 'Your Circle'),
             const Spacer(),
             Pressable(
               label: 'Your profile',
               onTap: () => ref.read(tabProvider.notifier).state = 2,
-              child: Avatar(me, size: 36),
+              child: const Icon(CupertinoIcons.person_circle, size: 36),
             ),
           ],
         ),
         const SizedBox(height: 22),
-        Text('${greeting(DateTime.now())}, ${me.firstName}', style: FType.title),
+        Text('${greeting(DateTime.now())}, $firstName', style: FType.title),
         const SizedBox(height: 20),
         if (active == null)
           const EmptyState(
