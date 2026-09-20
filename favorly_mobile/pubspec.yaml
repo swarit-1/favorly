@@ -38,6 +38,7 @@ dependencies:
   flutter_riverpod: ^2.5.0
   freezed_annotation: ^2.4.1
   http: ^1.1.0
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -57,6 +58,26 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Figtree is the closest open typeface to Meta's Optimistic (OFL, bundled).
+  # Caveat renders the handwritten list in the demo camera preview.
+  fonts:
+    - family: Figtree
+      fonts:
+        - asset: assets/fonts/Figtree-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Figtree-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Figtree-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Figtree-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Figtree-ExtraBold.ttf
+          weight: 800
+    - family: Caveat
+      fonts:
+        - asset: assets/fonts/Caveat-Medium.ttf
+          weight: 500
 
   # To add assets to your application, add an assets section, like this:
   # assets:

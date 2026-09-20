@@ -1,11 +1,18 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers/auth_provider.dart';
-import '../providers/trip_provider.dart';
-import '../theme.dart';
-import '../widgets/common.dart';
-import 'confirm_trip_screen.dart';
+import '../models/models.dart';
+import '../state/demo_store.dart';
+import '../theme/tokens.dart';
+import '../util/format.dart';
+import '../util/nav.dart';
+import '../widgets/buttons.dart';
+import '../widgets/chips.dart';
+import '../widgets/page.dart';
+import '../widgets/people.dart';
+import '../widgets/surfaces.dart';
+import '../widgets/voice_sheet.dart';
 
 class PostTripScreen extends ConsumerStatefulWidget {
   const PostTripScreen({super.key});
@@ -15,273 +22,239 @@ class PostTripScreen extends ConsumerStatefulWidget {
 }
 
 class _PostTripScreenState extends ConsumerState<PostTripScreen> {
-  String? selectedStore = "Trader Joe's";
-  DateTime? selectedTime = DateTime.now().add(const Duration(hours: 3));
-  bool isLoading = false;
+  static const _stores = ["Trader Joe's", 'CVS', 'Costco', 'Whole Foods', 'Target'];
 
-  Future<void> _postTrip() async {
-    if (selectedStore == null || selectedTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select store and time')),
-      );
-      return;
-    }
+  final _storeField = TextEditingController();
+  DateTime _departAt = _roundUp(DateTime.now().add(const Duration(hours: 1)));
+  TripCaps _caps = const TripCaps();
+  String? _transcript;
+  String? _storeError;
 
-    setState(() => isLoading = true);
-
-    try {
-      final authState = ref.read(authProvider);
-      if (authState.userId == null) {
-        throw Exception('Not authenticated');
-      }
-
-      final tripId = await ref.read(tripsProvider.notifier).createTrip(
-            store: selectedStore!,
-            departAt: selectedTime!,
-            userId: authState.userId!,
-          );
-
-      if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Trip created successfully!')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    } finally {
-      setState(() => isLoading = false);
-    }
+  static DateTime _roundUp(DateTime t) {
+    final minutes = ((t.minute + 14) ~/ 15) * 15;
+    return DateTime(t.year, t.month, t.day, t.hour).add(Duration(minutes: minutes));
   }
 
   @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    final tripsState = ref.watch(tripsProvider);
+  void dispose() {
+    _storeField.dispose();
+    super.dispose();
+  }
 
-    return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-          children: [
-            const BackChevron(),
-            const SizedBox(height: 10),
-            Text('Post a trip', style: text.headlineMedium),
-            const SizedBox(height: 8),
-            Text(
-              'Tell your neighbors where you are going and when. '
-              'They can add their shopping requests.',
-              style: text.bodyMedium,
-            ),
-            const SizedBox(height: 22),
-            const _FieldLabel('Store'),
-            const SizedBox(height: 8),
-            _SelectField(
-              icon: Icons.shopping_basket_outlined,
-              value: selectedStore ?? "Select store",
-              onTap: () => _showStoreSelector(context),
-            ),
-            const SizedBox(height: 18),
-            const _FieldLabel('When are you going?'),
-            const SizedBox(height: 8),
-            _SelectField(
-              icon: Icons.calendar_today_rounded,
-              value: selectedTime != null
-                  ? selectedTime!.toString().split('.')[0]
-                  : 'Select time',
-              onTap: () => _showTimeSelector(context),
-            ),
-            const SizedBox(height: 18),
-            const _CapsCard(),
-            const SizedBox(height: 22),
-            PillButton(
-              label: 'Say the trip',
-              icon: Icons.mic_none_rounded,
-              background: AppColors.greenTint,
-              foreground: AppColors.green,
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const ConfirmTripScreen(),
+  Future<void> _sayIt() async {
+    final transcript = await showFavorlySheet<String>(
+      context,
+      builder: (_) => const VoiceCaptureSheet(
+        title: 'Say the trip',
+        prompt: 'Try: “Trader Joe’s at three, five people, forty each.”',
+        transcript: DemoStore.voiceTripTranscript,
+      ),
+    );
+    if (transcript == null || !mounted) return;
+    final draft = ref.read(storeProvider).tripDraftFromVoice();
+    setState(() {
+      _transcript = transcript;
+      _storeField.text = draft.store;
+      _departAt = draft.departAt;
+      _caps = draft.caps;
+      _storeError = null;
+    });
+  }
+
+  Future<void> _pickTime() async {
+    var picked = _departAt;
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (ctx) => Container(
+        height: 320,
+        color: FColors.canvas,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 10, 0),
+                child: Row(
+                  children: [
+                    const Text('Leaving', style: FType.subheading),
+                    const Spacer(),
+                    FTextButton('Done', onPressed: () => Navigator.of(ctx).pop()),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            PillButton(
-              label: isLoading ? 'Creating trip...' : 'Post trip',
-              onPressed: isLoading ? null : _postTrip,
-            ),
-            if (tripsState.error != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Text(
-                  tripsState.error!,
-                  style: TextStyle(color: Colors.red.shade700),
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.dateAndTime,
+                  initialDateTime: _departAt,
+                  minuteInterval: 5,
+                  onDateTimeChanged: (d) => picked = d,
                 ),
               ),
             ],
-          ],
+          ),
         ),
       ),
     );
+    if (!mounted) return;
+    setState(() => _departAt = picked);
   }
 
-  Future<void> _showStoreSelector(BuildContext context) async {
-    const stores = [
-      "Trader Joe's",
-      "Whole Foods",
-      "Safeway",
-      "CVS",
-      "Walgreens",
+  void _post() {
+    final name = _storeField.text.trim();
+    if (name.isEmpty) {
+      setState(() => _storeError = 'Add the store you’re going to.');
+      return;
+    }
+    ref.read(storeProvider).postTrip(store: name, departAt: _departAt, caps: _caps);
+    final messenger = ScaffoldMessenger.of(context);
+    popToRoot(context);
+    messenger.showSnackBar(SnackBar(
+      content: Text('Trip posted. Neighbors can add lists until ${clock(_departAt)}.'),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final quickTimes = <(String, DateTime)>[
+      ('In 1 hour', _roundUp(now.add(const Duration(hours: 1)))),
+      ('In 2 hours', _roundUp(now.add(const Duration(hours: 2)))),
+      ('Tomorrow 10 AM', DateTime(now.year, now.month, now.day + 1, 10)),
     ];
 
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => ListView(
-        shrinkWrap: true,
-        children: stores
-            .map((store) => ListTile(
-                  title: Text(store),
-                  onTap: () => Navigator.pop(context, store),
-                ))
-            .toList(),
-      ),
-    );
-
-    if (selected != null) {
-      setState(() => selectedStore = selected);
-    }
-  }
-
-  Future<void> _showTimeSelector(BuildContext context) async {
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: selectedTime ?? DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
-    );
-
-    if (selected != null) {
-      if (mounted) {
-        final time = await showTimePicker(
-          context: context,
-          initialTime: TimeOfDay.fromDateTime(selectedTime ?? DateTime.now()),
-        );
-
-        if (time != null) {
-          setState(() {
-            selectedTime = DateTime(
-              selected.year,
-              selected.month,
-              selected.day,
-              time.hour,
-              time.minute,
-            );
-          });
-        }
-      }
-    }
-  }
-}
-
-class _FieldLabel extends StatelessWidget {
-  const _FieldLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 15,
-        fontWeight: FontWeight.w600,
-        color: AppColors.ink,
-      ),
-    );
-  }
-}
-
-class _SelectField extends StatelessWidget {
-  const _SelectField({
-    required this.icon,
-    required this.value,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String value;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedCard(
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      child: Row(
-        children: [
-          Icon(icon, size: 22, color: AppColors.green),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: AppColors.ink,
+    return FavorlyPage(
+      topBar: const FTopBar(title: 'Post a trip'),
+      children: [
+        const PageTitle(
+          'Post a trip',
+          subtitle: 'Say where and when. Neighbors add their lists, you shop once.',
+        ),
+        if (_transcript != null) ...[
+          const Notice(
+            'Filled in from your voice note. Check it, then post.',
+            icon: CupertinoIcons.mic_fill,
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: FColors.surface,
+              borderRadius: BorderRadius.circular(FRadius.md),
+            ),
+            child: Text(_transcript!, style: FType.body.copyWith(color: FColors.inkSecondary)),
+          ),
+          const SizedBox(height: 22),
+        ],
+        const FieldLabel('Store'),
+        TextField(
+          controller: _storeField,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            hintText: 'Where are you going?',
+            errorText: _storeError,
+            prefixIcon: const Icon(CupertinoIcons.cart, size: 20, color: FColors.inkSecondary),
+          ),
+          onChanged: (_) {
+            if (_storeError != null) setState(() => _storeError = null);
+          },
+          onSubmitted: (_) => FocusScope.of(context).unfocus(),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final s in _stores)
+              SelectChip(
+                label: s,
+                selected: _storeField.text == s,
+                onTap: () => setState(() {
+                  _storeField.text = s;
+                  _storeError = null;
+                }),
+              ),
+          ],
+        ),
+        const SizedBox(height: 22),
+        const FieldLabel('Leaving'),
+        Panel(
+          children: [
+            PanelRow(
+              leading: const LeadingIcon(CupertinoIcons.clock),
+              title: whenLabel(_departAt),
+              subtitle: leavesLabel(_departAt),
+              onTap: _pickTime,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final (label, at) in quickTimes)
+              SelectChip(
+                label: label,
+                selected: _departAt == at,
+                onTap: () => setState(() => _departAt = at),
+              ),
+          ],
+        ),
+        const SectionHeader('Keep it manageable', padding: EdgeInsets.only(top: 28, bottom: 4)),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            'Caps keep the favor bounded. Change them any time.',
+            style: FType.caption.copyWith(color: FColors.inkSecondary),
+          ),
+        ),
+        Panel(
+          children: [
+            _CapRow(
+              label: 'Neighbors',
+              child: QtyStepper(
+                value: _caps.maxRequesters,
+                min: 1,
+                max: 10,
+                semanticLabel: 'neighbors',
+                onChanged: (v) => setState(() => _caps = _caps.copyWith(maxRequesters: v)),
               ),
             ),
-          ),
-          const Icon(Icons.keyboard_arrow_down_rounded,
-              color: AppColors.muted),
-        ],
-      ),
-    );
-  }
-}
-
-class _CapsCard extends StatelessWidget {
-  const _CapsCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-
-    return OutlinedCard(
-      padding: const EdgeInsets.all(18),
-      background: const Color(0xFFFAF9F5),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+            _CapRow(
+              label: 'Dollars each',
+              child: QtyStepper(
+                value: _caps.maxDollarsPerPerson.round(),
+                min: 5,
+                max: 150,
+                step: 5,
+                format: (v) => '\$$v',
+                semanticLabel: 'dollars per person',
+                onChanged: (v) =>
+                    setState(() => _caps = _caps.copyWith(maxDollarsPerPerson: v.toDouble())),
+              ),
+            ),
+            _CapRow(
+              label: 'Items each',
+              child: QtyStepper(
+                value: _caps.maxItemsPerPerson,
+                min: 1,
+                max: 20,
+                semanticLabel: 'items per person',
+                onChanged: (v) => setState(() => _caps = _caps.copyWith(maxItemsPerPerson: v)),
+              ),
+            ),
+          ],
+        ),
+      ],
+      bottom: BottomActions(
         children: [
-          Text('Keep it manageable', style: text.titleMedium),
-          const SizedBox(height: 6),
-          Text(
-            'These caps help keep trips friendly and fair for everyone.',
-            style: text.bodyMedium?.copyWith(fontSize: 14),
-          ),
-          const SizedBox(height: 16),
-          const _CapRow(
-            icon: Icons.groups_rounded,
-            label: 'Up to 5 neighbors',
-          ),
-          const SizedBox(height: 14),
-          const _CapRow(
-            icon: Icons.monetization_on_rounded,
-            label: '\$40 max per person',
-          ),
-          const SizedBox(height: 14),
-          const _CapRow(
-            icon: Icons.list_alt_rounded,
-            label: '8 items per person',
+          FButton(label: 'Post trip', onPressed: _post),
+          FButton(
+            label: _transcript == null ? 'Say it instead' : 'Say it again',
+            icon: CupertinoIcons.mic,
+            kind: FButtonKind.secondary,
+            onPressed: _sayIt,
           ),
         ],
       ),
@@ -290,29 +263,23 @@ class _CapsCard extends StatelessWidget {
 }
 
 class _CapRow extends StatelessWidget {
-  const _CapRow({required this.icon, required this.label});
+  const _CapRow({required this.label, required this.child});
 
-  final IconData icon;
   final String label;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 36,
-          child: Icon(icon, size: 24, color: AppColors.green),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-            color: AppColors.ink,
-          ),
-        ),
-      ],
+    return Container(
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+      alignment: Alignment.centerLeft,
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: FType.bodyStrong)),
+          child,
+        ],
+      ),
     );
   }
 }
