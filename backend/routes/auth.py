@@ -15,8 +15,6 @@ def get_supabase_client() -> Client:
     key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not url or not key:
         raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
-    print(f"🔑 URL: {url[:50]}...")
-    print(f"🔑 KEY: {key[:20]}...")
     return create_client(url, key)
 
 
@@ -44,21 +42,38 @@ class AuthResponse(BaseModel):
 
 @router.post("/signup", response_model=AuthResponse)
 async def signup(req: SignupRequest):
-    """Sign up a new user."""
-    print(f"\n🚀 SIGNUP CALLED: {req.email} / {req.invite_code}")
+    """Sign up a new user.
+
+    Order matters: supabase-py swaps the client's PostgREST token to the new
+    user's JWT after auth.sign_up(), so any table read on that client runs
+    under RLS and silently returns nothing. The circle lookup happens BEFORE
+    sign_up, and the users insert uses a fresh service-role client.
+    """
     supabase = get_supabase_client()
 
     try:
-        # Create auth user with email confirmation skipped
+        # 1. Validate the invite code first (service-role client, pre-sign_up)
+        circle_response = supabase.table("circles").select("*").eq("invite_code", req.invite_code).execute()
+        if not circle_response.data:
+            raise HTTPException(status_code=404, detail="Invalid invite code")
+        circle_id = circle_response.data[0]["id"]
+
+        # 2. Create the auth user (mutates this client's session — see docstring)
         try:
             auth_response = supabase.auth.sign_up({
                 "email": req.email,
                 "password": req.password,
-                "options": {"skip_confirmation": True}
             })
         except Exception as auth_error:
-            print(f"❌ Auth error: {auth_error}")
-            raise HTTPException(status_code=400, detail=str(auth_error))
+            # Retried signups (e.g. after an earlier failed attempt created the
+            # auth user but not the users row) fall through to plain login.
+            if "already registered" in str(auth_error).lower():
+                auth_response = supabase.auth.sign_in_with_password({
+                    "email": req.email,
+                    "password": req.password,
+                })
+            else:
+                raise HTTPException(status_code=400, detail=str(auth_error))
 
         if not auth_response.user:
             raise HTTPException(status_code=400, detail="Failed to create auth user")
@@ -66,28 +81,14 @@ async def signup(req: SignupRequest):
         user_id = auth_response.user.id
         access_token = auth_response.session.access_token if auth_response.session else ""
 
-        # Find circle by invite code
-        print(f"🔍 Looking for circle with code: '{req.invite_code}'")
-        circle_response = supabase.table("circles").select("*").eq("invite_code", req.invite_code).execute()
-        print(f"📦 Full response: {circle_response}")
-        print(f"📦 Data: {circle_response.data}")
-        print(f"📦 Count: {circle_response.count}")
-        if not circle_response.data:
-            raise HTTPException(status_code=404, detail="Invalid invite code")
-
-        circle_id = circle_response.data[0]["id"]
-
-        # Create user in users table
-        try:
-            user_response = supabase.table("users").insert({
-                "id": user_id,
-                "circle_id": circle_id,
-                "name": req.name,
-            }).execute()
-        except Exception as db_error:
-            print(f"❌ Database error: {db_error}")
-            raise HTTPException(status_code=500, detail=str(db_error))
-
+        # 3. Upsert the users row on a FRESH service-role client (the first
+        # client now carries the end-user JWT and is RLS-restricted).
+        db = get_supabase_client()
+        user_response = db.table("users").upsert({
+            "id": user_id,
+            "circle_id": circle_id,
+            "name": req.name,
+        }).execute()
         if not user_response.data:
             raise HTTPException(status_code=500, detail="Failed to create user")
 
@@ -120,8 +121,10 @@ async def login(req: LoginRequest):
         user_id = auth_response.user.id
         access_token = auth_response.session.access_token
 
-        # Get user from users table
-        user_response = supabase.table("users").select("*").eq("id", user_id).execute()
+        # Get user from users table — fresh service-role client; sign_in
+        # swapped `supabase`'s PostgREST token to the end-user JWT (RLS).
+        db = get_supabase_client()
+        user_response = db.table("users").select("*").eq("id", user_id).execute()
         if not user_response.data:
             raise HTTPException(status_code=404, detail="User not found")
 
