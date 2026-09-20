@@ -1,0 +1,19 @@
+{
+  "name": "generic_grocery",
+  "width_m": 30,
+  "height_m": 20,
+  "nodes": {
+    "entrance": { "x": 2.0, "y": 18.0 },
+    "produce": { "x": 4.0, "y": 13.0 },
+    "bakery": { "x": 4.0, "y": 6.0 },
+    "meat": { "x": 9.0, "y": 3.0 },
+    "dairy": { "x": 14.0, "y": 3.0 },
+    "frozen": { "x": 15.0, "y": 9.0 },
+    "pantry": { "x": 19.0, "y": 6.0 },
+    "beverages": { "x": 23.0, "y": 4.0 },
+    "household": { "x": 26.0, "y": 9.0 },
+    "personal_care": { "x": 26.0, "y": 14.0 },
+    "other": { "x": 20.0, "y": 13.0 },
+    "checkout": { "x": 15.0, "y": 18.0 }
+  }
+}
