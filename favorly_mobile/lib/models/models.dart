@@ -35,24 +35,32 @@ class MemberAddress {
     this.floor,
     this.buzzer,
     this.notes,
+    this.lat,
+    this.lng,
   });
 
   final String? unit;
   final String? floor;
   final String? buzzer;
   final String? notes;
+  final double? lat;
+  final double? lng;
 
   MemberAddress copyWith({
     String? unit,
     String? floor,
     String? buzzer,
     String? notes,
+    double? lat,
+    double? lng,
   }) =>
       MemberAddress(
         unit: unit ?? this.unit,
         floor: floor ?? this.floor,
         buzzer: buzzer ?? this.buzzer,
         notes: notes ?? this.notes,
+        lat: lat ?? this.lat,
+        lng: lng ?? this.lng,
       );
 }
 

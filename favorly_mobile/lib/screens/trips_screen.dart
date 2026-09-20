@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
@@ -19,12 +18,15 @@ import '../widgets/page.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/trip_hero.dart';
 import '../widgets/notification_bell.dart';
+import '../widgets/savings_meter.dart';
+import '../widgets/storm_banner.dart';
 import 'add_list_screen.dart';
 import 'favor_detail_screen.dart';
 import 'favor_finish_sheet.dart';
 import 'post_trip_screen.dart';
 import 'settlement_screen.dart';
 import 'shopping_screen.dart';
+import 'standalone_request_screen.dart';
 import 'trip_detail_screen.dart';
 
 /// Home: who needs you, and who you are already helping.
@@ -43,7 +45,8 @@ class TripsScreen extends ConsumerWidget {
 
     // Use auth data if available, fall back to demo store
     final userName = authState.name ?? store.me.name;
-    final firstName = userName.split(' ').first;
+    final nameParts = userName.split(' ');
+    final firstName = nameParts.isNotEmpty ? nameParts.first : 'Friend';
     final active = store.activeTrip;
     final recent = store.recentTrips;
 
@@ -70,16 +73,28 @@ class TripsScreen extends ConsumerWidget {
       ),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       children: [
-        Text('${greeting(DateTime.now())}, $firstName', style: FType.title),
+        // Storm mode banner (replaces greeting when active)
+        if (store.stormModeActive)
+          StormBanner(onDismiss: () => store.deactivateStormMode())
+        else
+          Text('${greeting(DateTime.now())}, $firstName', style: FType.title),
         // One quiet line, and only when it tells you something you cannot see
         // yet: how many people are waiting further down.
-        if (myFavor == null && waitingCount > 0) ...[
+        if (!store.stormModeActive && myFavor == null && waitingCount > 0) ...[
           const SizedBox(height: 6),
           Text(
             '${plural(waitingCount, 'neighbor')} nearby could use a hand.',
             style: FType.body.copyWith(color: FColors.inkSecondary),
           ),
         ],
+        // Pending items banner
+        if (store.pendingRequests.isNotEmpty) ...[
+          const SizedBox(height: FSpace.lg),
+          _PendingBanner(pendingCount: store.pendingRequests.fold<int>(0, (sum, list) => sum + list.length)),
+        ],
+        const SizedBox(height: FSpace.lg),
+        // Personal savings meter
+        if (!store.stormModeActive) SavingsMeter(savings: store.savingsFor(store.meId)),
         const SizedBox(height: FSpace.xxl),
         if (myFavor != null)
           _ActiveFavor(favor: myFavor, startedAt: startedAt)
@@ -93,6 +108,7 @@ class TripsScreen extends ConsumerWidget {
                 'up here with everything you need to finish it.',
           ),
         const _RecommendedFavors(),
+        const _AvailableTrips(),
         if (tripRows.isNotEmpty) ...[
           const SectionHeader('Trips'),
           Panel(
@@ -110,16 +126,15 @@ class TripsScreen extends ConsumerWidget {
                 label: 'Add your list',
                 icon: CupertinoIcons.camera,
                 onPressed: () {
-                  // Find an open trip to add a list to
-                  if (active?.status == TripStatus.open) {
-                    push(context, AddListScreen(tripId: active!.id));
+                  // Find an open trip to add a list to, or save for later
+                  final openTrip = [
+                    ...store.upcomingTrips.where((t) => t.status == TripStatus.open),
+                    if (active?.status == TripStatus.open) active!,
+                  ].firstOrNull;
+                  if (openTrip != null) {
+                    push(context, AddListScreen(tripId: openTrip.id));
                   } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('No open trip — post one first'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
+                    push(context, const StandaloneRequestScreen());
                   }
                 },
               ),
@@ -326,6 +341,161 @@ class _TripRow extends ConsumerWidget {
       subtitle: subtitle,
       trailing: done ? const StatusPill('Done', kind: PillKind.success) : null,
       onTap: () => push(context, TripDetailScreen(tripId: trip.id), name: 'trip/${trip.id}'),
+    );
+  }
+}
+
+/// Upcoming trips in your circle that you can join.
+class _AvailableTrips extends ConsumerStatefulWidget {
+  const _AvailableTrips();
+
+  @override
+  ConsumerState<_AvailableTrips> createState() => _AvailableTripsState();
+}
+
+class _AvailableTripsState extends ConsumerState<_AvailableTrips> {
+  String _filter = 'all';
+
+  @override
+  Widget build(BuildContext context) {
+    final store = ref.watch(storeProvider);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+
+    // Filter upcoming trips based on selected filter
+    List<Trip> filteredTrips = store.upcomingTrips.where((trip) {
+      return switch (_filter) {
+        'open' => trip.status == TripStatus.open,
+        'today' => trip.departAt.isAfter(today) && trip.departAt.isBefore(tomorrow),
+        _ => true, // 'all'
+      };
+    }).toList();
+
+    if (filteredTrips.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHeader('Trips in your circle'),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                SelectChip(
+                  label: 'All',
+                  selected: _filter == 'all',
+                  onTap: () => setState(() => _filter = 'all'),
+                ),
+                const SizedBox(width: 8),
+                SelectChip(
+                  label: 'Open',
+                  selected: _filter == 'open',
+                  onTap: () => setState(() => _filter = 'open'),
+                ),
+                const SizedBox(width: 8),
+                SelectChip(
+                  label: 'Today',
+                  selected: _filter == 'today',
+                  onTap: () => setState(() => _filter = 'today'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: FSpace.md),
+        Panel(
+          dividerIndent: 68,
+          children: [
+            for (final trip in filteredTrips) _AvailableTripRow(trip: trip),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// A row representing an available trip in the circle.
+class _AvailableTripRow extends ConsumerWidget {
+  const _AvailableTripRow({required this.trip});
+
+  final Trip trip;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final store = ref.watch(storeProvider);
+    final shopper = store.memberById(trip.shopperId);
+    final distance = store.distanceBetween(store.me, shopper);
+    final distanceLabel = distance != null
+        ? distance < 1000
+            ? '~${distance.toStringAsFixed(0).replaceAll(RegExp(r'\.0+$'), '')}m'
+            : '~${(distance / 1000).toStringAsFixed(1)}km'
+        : null;
+    final spotsLeft = store.spotsLeft(trip);
+    final subtitle =
+        '${whenLabel(trip.departAt)} · ${shopper.firstName} · ${spotsLeft > 0 ? '$spotsLeft spot${spotsLeft == 1 ? '' : 's'} left' : 'Full'}';
+
+    return PanelRow(
+      leading: const LeadingIcon(CupertinoIcons.cart, size: 40),
+      title: trip.store,
+      subtitle: subtitle,
+      trailing: distanceLabel != null
+          ? Text(
+              distanceLabel,
+              style: FType.caption.copyWith(color: FColors.inkSecondary),
+            )
+          : spotsLeft == 0
+              ? const StatusPill('Full', kind: PillKind.attention)
+              : null,
+      onTap: () => push(context, TripDetailScreen(tripId: trip.id), name: 'trip/${trip.id}'),
+    );
+  }
+}
+
+class _PendingBanner extends ConsumerWidget {
+  const _PendingBanner({required this.pendingCount});
+
+  final int pendingCount;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final store = ref.watch(storeProvider);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: FColors.blueTint,
+        borderRadius: BorderRadius.circular(FRadius.lg),
+        border: Border.all(color: FColors.blue),
+      ),
+      child: Row(
+        children: [
+          Icon(CupertinoIcons.clock, size: 18, color: FColors.blue),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${plural(pendingCount, 'item')} saved',
+                  style: FType.bodyStrong.copyWith(color: FColors.blue),
+                ),
+                Text(
+                  'Waiting for a nearby shopper',
+                  style: FType.caption.copyWith(color: FColors.blue),
+                ),
+              ],
+            ),
+          ),
+          FTextButton(
+            'Clear',
+            onPressed: () => store.clearPendingRequests(),
+          ),
+        ],
+      ),
     );
   }
 }

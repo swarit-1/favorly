@@ -409,3 +409,37 @@ class MemberCompatibility(BaseModel):
     trips_worked_together: int = Field(ge=0, default=0)
     average_rating: Optional[Decimal] = Field(None, ge=1, le=5)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================================================
+# VISION ANALYSIS MODELS
+# ============================================================================
+
+class AnalysisType(str, Enum):
+    PANTRY = "pantry"
+    SHELF = "shelf"
+    RECEIPT = "receipt"
+    DAMAGE = "damage"
+    YARD = "yard"
+    PET = "pet"
+    CLEANING = "cleaning"
+
+
+class PantryScan(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    id: UUID = Field(default_factory=uuid4)
+    user_id: Optional[UUID] = None
+    trip_id: Optional[UUID] = None
+    detected_items: List[dict] = Field(default_factory=list)
+    low_or_empty: List[str] = Field(default_factory=list)
+    summary: Optional[str] = None
+    expiration_warnings: List[dict] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    image_paths: List[str] = Field(default_factory=list)
+    analysis_type: AnalysisType = AnalysisType.PANTRY
+    confidence_score: Optional[float] = Field(None, ge=0, le=1)
+    vision_model: str = "muse-spark-1.3"
+    is_placeholder: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None

@@ -27,12 +27,25 @@ logging.basicConfig(
 # ============================================================================
 
 def get_supabase_client() -> Client:
-    """Get Supabase client."""
+    """Get Supabase client (anon key for user-facing operations)."""
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_KEY")
     if not url or not key:
         raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
     return create_client(url, key)
+
+
+def get_supabase_admin_client() -> Client:
+    """Get Supabase admin client (service role key for backend operations)."""
+    url = os.getenv("SUPABASE_URL")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not service_key:
+        # Fall back to anon key if service role not available
+        key = os.getenv("SUPABASE_KEY")
+        if not url or not key:
+            raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
+        return create_client(url, key)
+    return create_client(url, service_key)
 
 
 # ============================================================================
@@ -124,7 +137,7 @@ async def health_check():
 # ROUTES
 # ============================================================================
 
-from routes import auth, trips, requests, users, merged_list, vision, experiences, messages, notifications
+from routes import auth, trips, requests, users, merged_list, vision, experiences, messages, notifications, savings, storm, insurance, unlocks
 from routes.linq_webhook import router as linq_router
 
 print("\n📡 Registering routers...")
@@ -146,6 +159,14 @@ app.include_router(messages.router)
 print("✅ Messages router registered")
 app.include_router(notifications.router)
 print("✅ Notifications router registered")
+app.include_router(savings.router)
+print("✅ Savings router registered")
+app.include_router(storm.router)
+print("✅ Storm mode router registered")
+app.include_router(insurance.router)
+print("✅ Insurance router registered")
+app.include_router(unlocks.router)
+print("✅ Unlocks router registered")
 app.include_router(linq_router)  # Linq agent: inbound texts -> matching -> reply
 print("✅ Linq router registered\n")
 

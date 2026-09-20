@@ -528,4 +528,141 @@ class ApiClient {
       throw Exception('Mark all notifications read failed: ${response.body}');
     }
   }
+
+  // --- SAVINGS METER ---
+
+  static Future<Map<String, dynamic>> getSavings({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/savings/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Get savings') as Map<String, dynamic>;
+    } else {
+      throw Exception('Get savings failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getInsuranceStatus({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/insurance/status/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Get insurance status') as Map<String, dynamic>;
+    } else {
+      throw Exception('Get insurance status failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> checkInsuranceEligible({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/insurance/check-eligible/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Check insurance eligible') as Map<String, dynamic>;
+    } else {
+      throw Exception('Check insurance eligible failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getUnlockStatus({
+    required String circleId,
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/unlocks/status/$circleId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Get unlock status') as Map<String, dynamic>;
+    } else {
+      throw Exception('Get unlock status failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> claimUnlock({
+    required String circleId,
+    required String unlockType,
+    required String accessToken,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/unlocks/claim/$circleId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode({'unlock_type': unlockType}),
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Claim unlock') as Map<String, dynamic>;
+    } else {
+      throw Exception('Claim unlock failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getReferralStats({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$apiBaseUrl/referrals/stats/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Get referral stats') as Map<String, dynamic>;
+    } else {
+      throw Exception('Get referral stats failed: ${response.body}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> checkNewReferralRewards({
+    required String userId,
+    required String accessToken,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$apiBaseUrl/referrals/check-earned/$userId'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+    ).catchError(_unreachable);
+
+    if (response.statusCode == 200) {
+      return _decodeJson(response, 'Check referral rewards') as Map<String, dynamic>;
+    } else {
+      throw Exception('Check referral rewards failed: ${response.body}');
+    }
+  }
 }

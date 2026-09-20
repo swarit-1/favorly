@@ -4,7 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/demo_cast.dart';
+import '../models/demo_seed_data.dart';
 import '../models/models.dart';
+import '../models/savings_models.dart';
+import '../models/insurance_models.dart';
+import '../models/unlocks_models.dart';
+import '../models/referrals_models.dart';
 
 final storeProvider =
     ChangeNotifierProvider<DemoStore>((ref) => DemoStore.seeded());
@@ -57,6 +62,7 @@ class DemoStore extends ChangeNotifier {
   final settlements = <String, List<Settlement>>{};
   final ledger = <String, LedgerRow>{};
   final experiences = <String, ExperienceRating>{}; // tripId -> ratings map, keyed by "tripId:ratedById:ratedId"
+  final _pendingRequests = <List<ItemDraft>>[];
 
   String _meId = ANA_ID;
   bool joined = true;
@@ -64,6 +70,22 @@ class DemoStore extends ChangeNotifier {
   SubstitutionPrompt? pendingPrompt;
   String? lastCompletedTripId;
   int _seq = 0;
+
+  // Storm mode state
+  bool stormModeActive = false;
+  String? stormType;
+  DateTime? stormExpiresAt;
+  int stormKarmaMultiplier = 1;
+
+  // Insurance eligibility state
+  final insuranceStatuses = <String, InsuranceStatus>{};
+
+  // Collective unlocks state
+  final claimedUnlocks = <String>{}; // Set of claimed unlock types
+  CircleUnlockStatus? _cachedUnlockStatus;
+
+  // Referral state
+  final referralRewards = <String, ReferralReward>{}; // userId -> rewards
 
   String _id(String prefix) => '${prefix}_${++_seq}';
 
@@ -73,7 +95,20 @@ class DemoStore extends ChangeNotifier {
 
   Member get me => memberById(_meId);
   String get meId => _meId;
-  Member memberById(String id) => members.firstWhere((m) => m.id == id);
+
+  Member memberById(String id) {
+    try {
+      return members.firstWhere((m) => m.id == id);
+    } catch (e) {
+      // Fallback: return first member if not found (shouldn't happen in demo)
+      if (members.isEmpty) {
+        throw Exception('No members available in demo store');
+      }
+      debugPrint('⚠️ Member $id not found. Using first member as fallback.');
+      return members.first;
+    }
+  }
+
   Trip tripById(String id) => trips.firstWhere((t) => t.id == id);
 
   List<Trip> get _byDeparture =>
@@ -99,6 +134,8 @@ class DemoStore extends ChangeNotifier {
 
   List<Trip> get recentTrips =>
       _byDeparture.where((t) => !t.isLive).toList().reversed.toList();
+
+  List<List<ItemDraft>> get pendingRequests => List.unmodifiable(_pendingRequests);
 
   bool isShopper(Trip t) => t.shopperId == _meId;
 
@@ -136,10 +173,163 @@ class DemoStore extends ChangeNotifier {
     return null;
   }
 
+  // ---------------------------------------------------------------------------
+  // Savings Meter
+  // ---------------------------------------------------------------------------
+
+  /// Delivery app pricing benchmarks for savings computation.
+  static const double _markupRate = 0.20; // 20% item markup
+  static const double _deliveryFee = 5.99;
+  static const double _serviceFeeRate = 0.08; // 8% service fee
+  static const double _tipRate = 0.18; // 18% tip
+  static const double _bulkSavingsRate = 0.12; // 12% bulk savings
+
+  /// Compute requester savings for this month.
+  PersonalSavings savingsFor(String memberId) {
+    // Get all settlements for this member as requester from this month
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month, 1);
+
+    double totalSubtotal = 0;
+    double totalTax = 0;
+    double totalPaid = 0;
+    int tripsCount = 0;
+
+    for (final tripSettlements in settlements.values) {
+      for (final settlement in tripSettlements) {
+        if (settlement.requesterId == memberId) {
+          // Check if trip is recent (this month approximation)
+          Trip? trip;
+          try {
+            trip = trips.firstWhere((t) => t.id == settlement.tripId);
+          } catch (e) {
+            trip = null;
+          }
+          if (trip != null && trip.departAt.isAfter(monthStart)) {
+            totalSubtotal += settlement.subtotal;
+            totalTax += settlement.taxShare;
+            totalPaid += settlement.total;
+            tripsCount++;
+          }
+        }
+      }
+    }
+
+    // Compute delivery-app estimate
+    double deliveryAppEstimate = 0;
+    double feesAvoided = 0;
+
+    if (totalSubtotal > 0) {
+      final markup = totalSubtotal * _markupRate;
+      final serviceFee = totalSubtotal * _serviceFeeRate;
+      final tip = (totalSubtotal + totalTax) * _tipRate;
+
+      deliveryAppEstimate = totalSubtotal + totalTax + markup + _deliveryFee + serviceFee + tip;
+      feesAvoided = math.max(0, deliveryAppEstimate - totalPaid);
+    }
+
+    final requesterSavings = totalSubtotal > 0
+        ? RequesterSavings(
+            feesAvoidedThisMonth: _round(feesAvoided),
+            feesAvoidedAllTime: _round(feesAvoided),
+            tripsUsedThisMonth: tripsCount,
+            deliveryAppEstimate: _round(deliveryAppEstimate),
+            favorlyCost: _round(totalPaid),
+          )
+        : null;
+
+    // Compute carrier savings
+    final carrierLedger = ledger[memberId];
+    final carrierTripsThisMonth =
+        trips.where((t) => t.shopperId == memberId && t.status == TripStatus.done).length;
+    final tripsRun = carrierLedger?.tripsRun ?? 0;
+    final dollarsCarried = carrierLedger?.dollarsCarried ?? 0;
+
+    final perkValue = (tripsRun > 0 ? tripsRun : carrierTripsThisMonth) * 2.0;
+    final bulkSavings = dollarsCarried * _bulkSavingsRate;
+
+    final carrierSavings = (tripsRun > 0 || dollarsCarried > 0)
+        ? CarrierSavings(
+            perksEarnedThisMonth: _round(perkValue),
+            bulkSavingsThisMonth: _round(bulkSavings),
+            totalEarnedThisMonth: _round(perkValue + bulkSavings),
+            tripsCarriedThisMonth: carrierTripsThisMonth > 0 ? carrierTripsThisMonth : tripsRun,
+          )
+        : null;
+
+    return PersonalSavings(
+      requesterSavings: requesterSavings,
+      carrierSavings: carrierSavings,
+      hasRequesterData: requesterSavings != null,
+      hasCarrierData: carrierSavings != null,
+    );
+  }
+
   TripItem itemById(String tripId, String itemId) => tripById(tripId)
       .requests
       .expand((r) => r.items)
       .firstWhere((i) => i.id == itemId);
+
+  // ---------------------------------------------------------------------------
+  // Storm Mode
+  // ---------------------------------------------------------------------------
+
+  /// Activate storm mode (demo trigger).
+  void activateStormMode({String type = 'snowstorm'}) {
+    stormModeActive = true;
+    stormType = type;
+    stormKarmaMultiplier = 2;
+    stormExpiresAt = DateTime.now().add(const Duration(hours: 4));
+    notifyListeners();
+  }
+
+  /// Deactivate storm mode.
+  void deactivateStormMode() {
+    stormModeActive = false;
+    stormType = null;
+    stormKarmaMultiplier = 1;
+    stormExpiresAt = null;
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Insurance Eligibility
+  // ---------------------------------------------------------------------------
+
+  /// Get insurance status for a member.
+  InsuranceStatus insuranceFor(String memberId) {
+    // Check if already computed
+    if (insuranceStatuses.containsKey(memberId)) {
+      return insuranceStatuses[memberId]!;
+    }
+
+    // Compute based on trips carried this month
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month, 1);
+
+    final tripsCarried = trips
+        .where((t) =>
+            t.shopperId == memberId &&
+            t.status == TripStatus.done &&
+            t.departAt.isAfter(monthStart))
+        .length;
+
+    final status = InsuranceStatus(
+      userId: memberId,
+      active: tripsCarried >= 3,
+      tripsCarriedThisMonth: tripsCarried,
+      guaranteedThreshold: 3,
+      expiresAt:
+          tripsCarried >= 3 ? now.add(const Duration(days: 1)) : null,
+    );
+
+    insuranceStatuses[memberId] = status;
+    return status;
+  }
+
+  /// Check if a member is insurance-eligible (3+ carries this month).
+  bool isInsuranceEligible(String memberId) =>
+      insuranceFor(memberId).active;
 
   // ---------------------------------------------------------------------------
   // Identity
@@ -229,6 +419,20 @@ class DemoStore extends ChangeNotifier {
 
   void resetDemo() {
     _seed();
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pending Requests (trip-independent saves)
+  // ---------------------------------------------------------------------------
+
+  void savePendingRequest(List<ItemDraft> items) {
+    _pendingRequests.add(items);
+    notifyListeners();
+  }
+
+  void clearPendingRequests() {
+    _pendingRequests.clear();
     notifyListeners();
   }
 
@@ -718,6 +922,43 @@ class DemoStore extends ChangeNotifier {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Distance calculation (Haversine formula)
+  // ---------------------------------------------------------------------------
+
+  static const double _earthRadiusKm = 6371;
+
+  /// Compute distance in meters between two lat/lng coordinates using Haversine.
+  static double _computeDistance(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
+    final dlat = (lat2 - lat1) * math.pi / 180;
+    final dlng = (lng2 - lng1) * math.pi / 180;
+    final a = math.sin(dlat / 2) * math.sin(dlat / 2) +
+        math.cos(lat1 * math.pi / 180) *
+            math.cos(lat2 * math.pi / 180) *
+            math.sin(dlng / 2) *
+            math.sin(dlng / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return _earthRadiusKm * c * 1000; // return meters
+  }
+
+  /// Compute distance in meters between two members using their address coordinates.
+  /// Returns null if either member lacks coordinates.
+  double? distanceBetween(Member a, Member b) {
+    final aLat = a.address?.lat;
+    final aLng = a.address?.lng;
+    final bLat = b.address?.lat;
+    final bLng = b.address?.lng;
+    if (aLat == null || aLng == null || bLat == null || bLng == null) {
+      return null;
+    }
+    return _computeDistance(aLat, aLng, bLat, bLng);
+  }
+
   // PATCH /receipts/{id}/assignments
   void assignLine(String tripId, int lineNo, String memberId) {
     final split = receipts[tripId]!;
@@ -1078,16 +1319,149 @@ class DemoStore extends ChangeNotifier {
         status: status,
       );
 
+  List<Trip> _generateTrips(
+    DateTime now,
+    DateTime Function(int dayOffset, int hour, int minute) at,
+    int sinceSaturday,
+    DateTime leaves,
+  ) {
+    // Guard: ensure members are loaded before generating trips
+    if (members.isEmpty) {
+      debugPrint('⚠️ Warning: members list is empty in _generateTrips');
+      return [];
+    }
+
+    final itemSamples = {
+      'groceries': [
+        'Oat Milk', 'Almond Milk', 'Greek Yogurt', 'Organic Coffee',
+        'Frozen Berries', 'Spinach', 'Organic Kale', 'Olive Oil',
+        'Almond Flour', 'Pasta', 'Hummus', 'Cheese', 'Eggs'
+      ],
+      'snacks': [
+        'Dark Chocolate', 'Almonds', 'Sparkling Water', 'Granola',
+        'Protein Bar', 'Trail Mix', 'Crackers', 'Chips'
+      ],
+      'household': [
+        'Toilet Paper', 'Paper Towels', 'Dish Soap', 'Laundry Detergent',
+        'Toothpaste', 'Shampoo', 'Deodorant', 'Trash Bags'
+      ],
+    };
+
+    final trips = <Trip>[];
+
+    // Completed trips from past week (for settlements and history)
+    final completedStores = ['Costco', 'Whole Foods', "Trader Joe's", 'Market Basket'];
+    for (var i = 0; i < 12; i++) {
+      final shopper = members[i % members.length];
+      final store = completedStores[i % completedStores.length];
+      final dayOffset = -(7 - (i % 6)); // Spread across last week
+
+      // Add 3-5 requests per completed trip
+      final requestCount = 3 + (i % 3);
+      final tripRequests = <TripRequest>[];
+      for (var j = 0; j < requestCount; j++) {
+        final requester = members[(i + j + 1) % members.length];
+        final itemCategory = itemSamples.entries.toList()[j % itemSamples.length];
+        final itemCount = 2 + (j % 3);
+
+        tripRequests.add(
+          TripRequest(
+            id: _id('req'),
+            requesterId: requester.id,
+            items: [
+              for (var k = 0; k < itemCount; k++)
+                _item(
+                  requester.id,
+                  itemCategory.value[k % itemCategory.value.length],
+                  maxPrice: 5.0 + (k * 2.0),
+                  status: ItemStatus.got,
+                ),
+            ],
+          ),
+        );
+      }
+
+      trips.add(
+        Trip(
+          id: _id('trip'),
+          shopperId: shopper.id,
+          circleId: DEMO_CIRCLE_ID,
+          store: store,
+          departAt: at(dayOffset, 9 + (i % 12), (i * 15) % 60),
+          status: TripStatus.done,
+          caps: const TripCaps(maxRequesters: 6, maxDollarsPerPerson: 50, maxItemsPerPerson: 10),
+          requests: tripRequests,
+        ),
+      );
+    }
+
+    // Active/upcoming trips (today and tomorrow)
+    final activeStores = ["Trader Joe's", 'Whole Foods', 'CVS', 'Market Basket', 'Target'];
+    for (var i = 0; i < 5; i++) {
+      final shopper = members[(i * 3) % members.length];
+      final store = activeStores[i % activeStores.length];
+      final dayOffset = i ~/ 2; // Some today, some tomorrow
+      final hour = 9 + (i * 2);
+
+      final requestCount = 2 + (i % 3);
+      final tripRequests = <TripRequest>[];
+      for (var j = 0; j < requestCount; j++) {
+        final requester = members[(i + j + 2) % members.length];
+        final itemCategory = itemSamples.entries.toList()[j % itemSamples.length];
+        final itemCount = 1 + (j % 3);
+
+        tripRequests.add(
+          TripRequest(
+            id: _id('req'),
+            requesterId: requester.id,
+            items: [
+              for (var k = 0; k < itemCount; k++)
+                _item(
+                  requester.id,
+                  itemCategory.value[k % itemCategory.value.length],
+                  maxPrice: 4.0 + (k * 2.0),
+                ),
+            ],
+          ),
+        );
+      }
+
+      trips.add(
+        Trip(
+          id: _id('trip'),
+          shopperId: shopper.id,
+          circleId: DEMO_CIRCLE_ID,
+          store: store,
+          departAt: at(dayOffset, hour, 0),
+          caps: const TripCaps(maxRequesters: 5, maxDollarsPerPerson: 40, maxItemsPerPerson: 8),
+          requests: tripRequests,
+        ),
+      );
+    }
+
+    return trips;
+  }
+
   void _seed() {
     _seq = 0;
-    // Use canonical cast data from backend/seed/cast.py
+    // Load 25+ diverse members from Boston area seed data
     members
       ..clear()
       ..addAll([
-        Member(id: ANA_ID, name: ANA_NAME, venmoHandle: ANA_VENMO, tint: MemberTint.blue),
-        Member(id: BEN_ID, name: BEN_NAME, venmoHandle: BEN_VENMO, tint: MemberTint.green),
-        Member(id: CHLOE_ID, name: CHLOE_NAME, venmoHandle: CHLOE_VENMO, tint: MemberTint.amber),
-        Member(id: MAYA_ID, name: MAYA_NAME, venmoHandle: MAYA_VENMO, tint: MemberTint.plum),
+        for (final (id, name, venmo, tint, _, __, address, bio, dietary, stores, availability, role)
+            in BostonDemoData.members)
+          Member(
+            id: id,
+            name: name,
+            venmoHandle: venmo,
+            tint: tint,
+            address: address,
+            bio: bio,
+            dietary: dietary,
+            stores: stores,
+            availability: availability,
+            role: role ?? ShopperRole.both,
+          ),
       ]);
     _meId = ANA_ID;
     joined = true;
@@ -1096,6 +1470,10 @@ class DemoStore extends ChangeNotifier {
     lastCompletedTripId = null;
     receipts.clear();
     settlements.clear();
+    insuranceStatuses.clear();
+    referralRewards.clear();
+    claimedUnlocks.clear();
+    _pendingRequests.clear();
 
     final now = DateTime.now();
     DateTime at(int dayOffset, int hour, int minute) =>
@@ -1108,66 +1486,19 @@ class DemoStore extends ChangeNotifier {
 
     trips
       ..clear()
-      ..addAll([
-        Trip(
-          id: 'trip_tj',
-          shopperId: ANA_ID,
-          circleId: DEMO_CIRCLE_ID,
-          store: "Trader Joe's",
-          departAt: leaves,
-          caps: const TripCaps(maxRequesters: 5, maxDollarsPerPerson: 40, maxItemsPerPerson: 8),
-          requests: [
-            TripRequest(id: 'req_ben', requesterId: BEN_ID, items: [
-              _item(BEN_ID, 'Oat Milk', maxPrice: 3.49),
-              _item(BEN_ID, 'Dark Chocolate Almonds', note: '70% or darker', maxPrice: 3.99),
-              _item(BEN_ID, 'Sparkling Water', qty: 2, maxPrice: 3.49),
-            ]),
-            TripRequest(id: 'req_maya', requesterId: MAYA_ID, items: [
-              _item(MAYA_ID, 'Greek Yogurt', note: 'plain, full fat', maxPrice: 2.99),
-              _item(MAYA_ID, 'Organic Coffee', maxPrice: 5.99),
-              _item(MAYA_ID, 'Frozen Berries', maxPrice: 4.99),
-            ]),
-          ],
-        ),
-        Trip(
-          id: 'trip_cvs',
-          shopperId: MAYA_ID,
-          circleId: DEMO_CIRCLE_ID,
-          store: 'CVS',
-          departAt: at(1, 10, 30),
-          caps: const TripCaps(maxRequesters: 4, maxDollarsPerPerson: 25, maxItemsPerPerson: 5),
-        ),
-        Trip(
-          id: 'trip_costco',
-          shopperId: CHLOE_ID,
-          circleId: DEMO_CIRCLE_ID,
-          store: 'Costco',
-          departAt: at(-sinceSaturday, 9, 0),
-          status: TripStatus.done,
-          caps: const TripCaps(maxRequesters: 6, maxDollarsPerPerson: 60, maxItemsPerPerson: 10),
-          requests: [
-            TripRequest(id: 'req_c_ana', requesterId: ANA_ID, items: [
-              _item(ANA_ID, 'Olive Oil', maxPrice: 7.99, status: ItemStatus.got),
-              _item(ANA_ID, 'Almond Flour', maxPrice: 5.99, status: ItemStatus.got),
-            ]),
-            TripRequest(id: 'req_c_ben', requesterId: BEN_ID, items: [
-              _item(BEN_ID, 'Organic Whole Wheat Pasta', maxPrice: 1.99, status: ItemStatus.got),
-              _item(BEN_ID, 'Organic Coffee', qty: 2, maxPrice: 5.99, status: ItemStatus.got),
-            ]),
-            TripRequest(id: 'req_c_maya', requesterId: MAYA_ID, items: [
-              _item(MAYA_ID, 'Chicken Breast', maxPrice: 7.99, status: ItemStatus.got),
-            ]),
-          ],
-        ),
-      ]);
+      ..addAll(_generateTrips(now, at, sinceSaturday, leaves));
 
+    // Initialize ledger for all members with varied activity
     ledger
       ..clear()
       ..addAll({
-        ANA_ID: LedgerRow(memberId: ANA_ID, tripsRun: 3, favorsReceived: 1, dollarsCarried: 104.16),
-        BEN_ID: LedgerRow(memberId: BEN_ID, tripsRun: 1, favorsReceived: 4, dollarsCarried: 31.40),
-        CHLOE_ID: LedgerRow(memberId: CHLOE_ID, tripsRun: 2, favorsReceived: 3, dollarsCarried: 58.75),
-        MAYA_ID: LedgerRow(memberId: MAYA_ID, tripsRun: 1, favorsReceived: 2, dollarsCarried: 22.10),
+        for (var i = 0; i < members.length; i++)
+          members[i].id: LedgerRow(
+            memberId: members[i].id,
+            tripsRun: math.Random(i).nextInt(8),
+            favorsReceived: math.Random(i + 1).nextInt(10),
+            dollarsCarried: math.Random(i + 2).nextDouble() * 150,
+          ),
       });
 
     // Sample experience ratings for the completed Costco trip
@@ -1226,5 +1557,218 @@ class DemoStore extends ChangeNotifier {
           createdAt: now.subtract(const Duration(days: 5)),
         ),
       });
+
+    // Generate settlements for all completed trips with varied payment states
+    settlements.clear();
+    for (final trip in trips.where((t) => t.status == TripStatus.done)) {
+      final tripSettlements = <Settlement>[];
+      for (final request in trip.requests) {
+        // Calculate settlement amounts based on items
+        double subtotal = 0;
+        for (final item in request.items) {
+          subtotal += (item.maxPrice ?? 5.0) * item.qty;
+        }
+        final taxShare = _round(subtotal * 0.08);
+        final total = _round(subtotal + taxShare);
+
+        // Vary payment state: 70% paid, 20% unpaid, 10% pending
+        final paymentRand = math.Random(request.id.hashCode).nextDouble();
+        final paid = paymentRand < 0.7;
+
+        tripSettlements.add(
+          Settlement(
+            id: _id('settle'),
+            tripId: trip.id,
+            requesterId: request.requesterId,
+            subtotal: _round(subtotal),
+            taxShare: taxShare,
+            total: total,
+            lines: [],
+            venmoLink: 'venmo.com/${memberById(trip.shopperId).venmoHandle}?txn=${trip.store}',
+            paid: paid,
+          ),
+        );
+      }
+      settlements[trip.id] = tripSettlements;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Collective Unlocks
+  // ---------------------------------------------------------------------------
+
+  /// Get collective unlock status for a circle.
+  CircleUnlockStatus unlocksFor(String circleId) {
+    // Check if cached
+    if (_cachedUnlockStatus != null) {
+      return _cachedUnlockStatus!;
+    }
+
+    // Count all settlements from this month
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month, 1);
+
+    int favorsThisMonth = 0;
+    for (final tripSettlements in settlements.values) {
+      for (final settlement in tripSettlements) {
+        // Check if trip is this month
+        Trip? trip;
+        try {
+          trip = trips.firstWhere((t) => t.id == settlement.tripId);
+        } catch (e) {
+          trip = null;
+        }
+        if (trip != null && trip.departAt.isAfter(monthStart)) {
+          favorsThisMonth++;
+        }
+      }
+    }
+
+    // Determine progress toward milestones
+    int? nextMilestoneThreshold;
+    String? nextMilestoneDescription;
+    int? nextMilestoneFavorsRemaining;
+    final List<String> availableUnlocks = [];
+
+    if (favorsThisMonth < 25) {
+      nextMilestoneThreshold = 25;
+      nextMilestoneDescription = 'Pizza Night 🍕';
+      nextMilestoneFavorsRemaining = 25 - favorsThisMonth;
+      availableUnlocks.add(UnlockType.pizzaNight);
+    } else if (favorsThisMonth < 50) {
+      nextMilestoneThreshold = 50;
+      nextMilestoneDescription = 'Coffee Machine ☕';
+      nextMilestoneFavorsRemaining = 50 - favorsThisMonth;
+      availableUnlocks.addAll([UnlockType.pizzaNight, UnlockType.coffeeMachine]);
+    } else if (favorsThisMonth < 100) {
+      nextMilestoneThreshold = 100;
+      nextMilestoneDescription = 'Lobby Upgrade 🏢';
+      nextMilestoneFavorsRemaining = 100 - favorsThisMonth;
+      availableUnlocks.addAll([
+        UnlockType.pizzaNight,
+        UnlockType.coffeeMachine,
+        UnlockType.lobbyUpgrade
+      ]);
+    } else {
+      // All unlocked
+      availableUnlocks.addAll([
+        UnlockType.pizzaNight,
+        UnlockType.coffeeMachine,
+        UnlockType.lobbyUpgrade,
+        UnlockType.communityLunch
+      ]);
+    }
+
+    // Compute progress percentage
+    final milestone = nextMilestoneThreshold ?? 100;
+    final progressPercentage =
+        (favorsThisMonth / milestone * 100).clamp(0.0, 100.0);
+
+    final status = CircleUnlockStatus(
+      circleId: circleId,
+      favorsThisMonth: favorsThisMonth,
+      progressPercentage: progressPercentage,
+      nextMilestoneThreshold: nextMilestoneThreshold,
+      nextMilestoneDescription: nextMilestoneDescription,
+      nextMilestoneFavorsRemaining: nextMilestoneFavorsRemaining,
+      claimedUnlocks: [
+        // Map claimed unlock types to CircleUnlock objects
+        for (final unlockedType in claimedUnlocks)
+          _createCircleUnlock(unlockedType)
+      ],
+      availableUnlocks: availableUnlocks,
+    );
+
+    _cachedUnlockStatus = status;
+    return status;
+  }
+
+  /// Create a CircleUnlock model from an unlock type string.
+  CircleUnlock _createCircleUnlock(String unlockType) {
+    String rewardDescription;
+
+    switch (unlockType) {
+      case UnlockType.pizzaNight:
+        rewardDescription = 'Pizza night sponsored by building';
+      case UnlockType.coffeeMachine:
+        rewardDescription = 'Coffee machine for lobby';
+      case UnlockType.lobbyUpgrade:
+        rewardDescription = 'Lobby renovation project';
+      case UnlockType.communityLunch:
+        rewardDescription = 'Community lunch gathering';
+      default:
+        rewardDescription = 'Mystery reward';
+    }
+
+    return CircleUnlock(
+      id: _id('unlock'),
+      circleId: DEMO_CIRCLE_ID,
+      unlockType: unlockType,
+      rewardDescription: rewardDescription,
+      favorsAtUnlock: unlockType == UnlockType.pizzaNight
+          ? 25
+          : unlockType == UnlockType.coffeeMachine
+              ? 50
+              : unlockType == UnlockType.lobbyUpgrade
+                  ? 100
+                  : 0,
+      claimedAt: DateTime.now(),
+    );
+  }
+
+  /// Demo only: claim an unlock.
+  void claimUnlock(String unlockType) {
+    if (!claimedUnlocks.contains(unlockType)) {
+      claimedUnlocks.add(unlockType);
+      _cachedUnlockStatus = null; // Invalidate cache
+      notifyListeners();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Referrals & Invite Codes
+  // ---------------------------------------------------------------------------
+
+  /// Get referral stats for a member (includes invite code and earned karma).
+  ReferralStats referralStatsFor(String memberId) {
+    // Generate deterministic invite code from member ID
+    final inviteCode = 'INVITE_${memberId.substring(0, 4).toUpperCase()}';
+
+    // Count referral rewards for this member
+    final memberRewards = referralRewards.values
+        .where((r) => r.referrerId == memberId)
+        .toList();
+
+    final totalReferred = memberRewards.length;
+    final totalKarmaEarned = memberRewards.fold(
+      0,
+      (sum, r) => sum + r.karmaEarned,
+    );
+
+    return ReferralStats(
+      userId: memberId,
+      inviteCode: inviteCode,
+      totalReferred: totalReferred,
+      totalKarmaEarned: totalKarmaEarned,
+      referrals: memberRewards,
+    );
+  }
+
+  /// Demo only: award a referral reward to a referrer.
+  void awardReferralReward({
+    required String referrerId,
+    required String referreeId,
+    int karmaAmount = 20,
+  }) {
+    final rewardId = _id('referral_reward');
+    referralRewards[rewardId] = ReferralReward(
+      id: rewardId,
+      referrerId: referrerId,
+      referreeId: referreeId,
+      karmaEarned: karmaAmount,
+      completedFavorId: _id('favor'),
+      earnedAt: DateTime.now(),
+    );
+    notifyListeners();
   }
 }

@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
+from auth.dependencies import get_current_user_id
 from db.client import get_supabase_client
 from shared.notify import write_notification
 
@@ -28,7 +29,11 @@ class Message(BaseModel):
 
 
 @router.post("/{trip_id}")
-async def send_message(trip_id: UUID, req: MessageRequest) -> Message:
+async def send_message(
+    trip_id: UUID,
+    req: MessageRequest,
+    sender_id: UUID = Depends(get_current_user_id),
+) -> Message:
     """Send a message to a trip.
 
     Inserts the message and fan-outs notifications to all other members of the trip.
@@ -41,13 +46,6 @@ async def send_message(trip_id: UUID, req: MessageRequest) -> Message:
         raise HTTPException(status_code=404, detail="Trip not found")
 
     trip = trip_response.data[0]
-
-    # Get the authenticated user
-    user = supabase.auth.get_user()
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    sender_id = user.id
 
     # Verify user is part of the trip's circle
     circle_response = supabase.table("users").select("*").eq("id", str(sender_id)).execute()
@@ -84,7 +82,7 @@ async def send_message(trip_id: UUID, req: MessageRequest) -> Message:
                 supabase,
                 UUID(member["id"]),
                 trip_id,
-                "new_message",
+                "message",
                 title=f"New message from {sender_name}",
                 body=req.body[:100],  # First 100 chars
             )
@@ -104,6 +102,7 @@ async def get_messages(
     trip_id: UUID,
     limit: int = 50,
     before: datetime | None = None,
+    user_id: UUID = Depends(get_current_user_id),
 ) -> list[Message]:
     """Fetch message history for a trip.
 
@@ -120,11 +119,7 @@ async def get_messages(
     trip = trip_response.data[0]
 
     # Verify the user is part of the trip's circle
-    user = supabase.auth.get_user()
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    circle_response = supabase.table("users").select("*").eq("id", str(user.id)).execute()
+    circle_response = supabase.table("users").select("*").eq("id", str(user_id)).execute()
     if not circle_response.data or circle_response.data[0]["circle_id"] != trip["circle_id"]:
         raise HTTPException(status_code=403, detail="Not part of this trip's circle")
 

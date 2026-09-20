@@ -56,6 +56,8 @@ class DemoCharacter:
     address_floor: str = None
     address_buzzer: str = None
     address_notes: str = None
+    address_lat: float = None
+    address_lng: float = None
 
     def __post_init__(self):
         if self.dietary is None:
@@ -73,6 +75,7 @@ CHLOE_ID = make_stable_uuid("chloe-marchetti")
 MAYA_ID = make_stable_uuid("maya-iyer")
 
 # Characters with realistic names, emails, and profiles
+# Cambridge, MA coordinates (all in the Harvard Square area)
 ANA = DemoCharacter(
     id=str(ANA_ID),
     name="Ana Delgado",
@@ -87,6 +90,8 @@ ANA = DemoCharacter(
     address_floor="3",
     address_buzzer="#123",
     address_notes="Leave with doorman",
+    address_lat=42.3736,
+    address_lng=-71.1190,
 )
 
 BEN = DemoCharacter(
@@ -102,6 +107,8 @@ BEN = DemoCharacter(
     address_unit="5A",
     address_floor="5",
     address_buzzer="Apt 5A",
+    address_lat=42.3750,
+    address_lng=-71.1150,
 )
 
 CHLOE = DemoCharacter(
@@ -118,6 +125,8 @@ CHLOE = DemoCharacter(
     address_floor="2",
     address_buzzer="Ring bell twice",
     address_notes="Building has gate, buzzer under maintenance",
+    address_lat=42.3720,
+    address_lng=-71.1210,
 )
 
 MAYA = DemoCharacter(
@@ -134,6 +143,8 @@ MAYA = DemoCharacter(
     address_floor="7",
     address_buzzer="#789",
     address_notes="Leave at reception desk",
+    address_lat=42.3770,
+    address_lng=-71.1170,
 )
 
 # All characters in order (shopper first, then requesters)
