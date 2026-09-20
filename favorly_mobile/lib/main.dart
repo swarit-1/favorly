@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'api_client.dart';
 import 'screens/placeholder_screen.dart';
 import 'screens/trips_screen.dart';
 import 'theme.dart';
@@ -9,20 +10,26 @@ void main() {
 }
 
 class FavorlyApp extends StatelessWidget {
-  const FavorlyApp({super.key});
+  const FavorlyApp({super.key, this.apiClient});
+
+  /// Overridable for tests -- pass an ApiClient built on an http.MockClient
+  /// instead of hitting a real backend.
+  final ApiClient? apiClient;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Favorly',
       theme: buildFavorlyTheme(),
-      home: const RootShell(),
+      home: RootShell(apiClient: apiClient),
     );
   }
 }
 
 class RootShell extends StatefulWidget {
-  const RootShell({super.key});
+  const RootShell({super.key, this.apiClient});
+
+  final ApiClient? apiClient;
 
   @override
   State<RootShell> createState() => _RootShellState();
@@ -42,10 +49,10 @@ class _RootShellState extends State<RootShell> {
     return Scaffold(
       body: IndexedStack(
         index: _index,
-        children: const [
-          TripsScreen(),
-          PlaceholderScreen(title: 'Circle', icon: Icons.groups_rounded),
-          PlaceholderScreen(title: 'You', icon: Icons.person_rounded),
+        children: [
+          TripsScreen(apiClient: widget.apiClient),
+          const PlaceholderScreen(title: 'Circle', icon: Icons.groups_rounded),
+          const PlaceholderScreen(title: 'You', icon: Icons.person_rounded),
         ],
       ),
       bottomNavigationBar: _FavorlyNavBar(

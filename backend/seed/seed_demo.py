@@ -1,76 +1,74 @@
 #!/usr/bin/env python3
-"""Seed demo circle and users into MongoDB."""
+"""Seed the demo circle + users into Postgres/Supabase, and register each user
+in the Trellis agent + graph service with the SAME id -- so favors logged from
+this backend (see services/trellis_client.py) resolve there with no mapping.
+"""
 
 import asyncio
 import json
-import os
+import sys
+from datetime import datetime
 from pathlib import Path
-from motor.motor_asyncio import AsyncClient
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import asyncpg
+from dotenv import load_dotenv
+
+
+def _dt(iso: str) -> datetime:
+    """asyncpg needs real (naive) datetime objects for this project's
+    `timestamp without time zone` columns -- unlike the Supabase REST client
+    (PostgREST), it won't coerce an ISO string, and it rejects a tz-aware
+    datetime against a tz-naive column."""
+    return datetime.fromisoformat(iso.replace("Z", "+00:00")).replace(tzinfo=None)
+
+load_dotenv()
+
+import db
+from services import trellis_client
+
 
 async def seed_demo():
-    """Load and insert demo data into MongoDB."""
-
-    # Load demo data
     demo_file = Path(__file__).parent / "demo_circle.json"
-    with open(demo_file) as f:
-        demo_data = json.load(f)
+    demo_data = json.loads(demo_file.read_text())
 
-    # Get MongoDB connection
-    mongo_uri = os.getenv("MONGODB_URI")
-    if not mongo_uri:
-        print("❌ MONGODB_URI not set")
+    pool = await db.init_pool()
+    if pool is None:
+        print("DATABASE_URL not set")
         return
 
-    db_name = os.getenv("MONGODB_DB_NAME", "favorly_demo")
-    client = AsyncClient(mongo_uri)
-    db = client[db_name]
-
-    try:
-        # Insert circle
+    async with pool.acquire() as conn:
         circle = demo_data["circle"]
-        result = await db.circles.update_one(
-            {"id": circle["id"]},
-            {"$set": circle},
-            upsert=True,
+        await conn.execute(
+            "INSERT INTO circles (id, name, invite_code, created_at) VALUES ($1, $2, $3, $4) "
+            "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name",
+            circle["id"], circle["name"], circle["invite_code"], _dt(circle["created_at"]),
         )
-        print(f"✓ Circle: {result.matched_count} matched, {result.upserted_id or 'updated'}")
+        print(f"circle: {circle['name']}")
 
-        # Insert users
         for user in demo_data["users"]:
-            result = await db.users.update_one(
-                {"id": user["id"]},
-                {"$set": user},
-                upsert=True,
+            await conn.execute(
+                "INSERT INTO users (id, circle_id, name, venmo_handle, created_at) "
+                "VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name",
+                user["id"], user["circle_id"], user["name"], user.get("venmo_handle"), _dt(user["created_at"]),
             )
-            print(f"✓ User: {user['name']}")
+            await trellis_client.register_person(user["id"], user["name"])
+            print(f"user: {user['name']} (registered in Trellis with the same id)")
 
-        # Insert prior trips (for ledger seeding)
         for trip in demo_data.get("prior_trips", []):
-            result = await db.trips.update_one(
-                {"id": trip["id"]},
-                {"$set": trip},
-                upsert=True,
+            caps = trip.get("caps", {})
+            await conn.execute(
+                "INSERT INTO trips (id, shopper_id, circle_id, store, depart_at, caps, status, created_at) "
+                "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8) ON CONFLICT (id) DO NOTHING",
+                trip["id"], trip["shopper_id"], trip["circle_id"], trip["store"],
+                _dt(trip["depart_at"]), json.dumps(caps), trip["status"], _dt(trip["created_at"]),
             )
-            print(f"✓ Trip: {trip['store']}")
+            print(f"prior trip: {trip['store']}")
 
-        print("\n✅ Demo data seeded successfully!")
-
-        # Show summary
-        circle_count = await db.circles.count_documents({})
-        user_count = await db.users.count_documents({})
-        trip_count = await db.trips.count_documents({})
-        print(f"\nSummary:")
-        print(f"  Circles: {circle_count}")
-        print(f"  Users: {user_count}")
-        print(f"  Trips: {trip_count}")
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-    finally:
-        client.close()
+    print("\nDemo data seeded.")
+    await db.close_pool()
 
 
 if __name__ == "__main__":
-    from dotenv import load_dotenv
-    load_dotenv()
     asyncio.run(seed_demo())
